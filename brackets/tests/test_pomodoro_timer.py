@@ -180,6 +180,13 @@ class TestPomodoroTimer:
             assert app.engine.active_task_title == "Tarea Creada En Foco"
             assert app.engine.active_project_id == "PROJ_FOCO"
             assert app.engine.active_task_id in week.days[0].task_ids
+
+            # Verificar que la bitácora Markdown se ha sincronizado en disco y contiene la tarea
+            import glob
+            md_files = glob.glob(os.path.join(tmp, "*Week35.md"))
+            with open(md_files[0], "r", encoding="utf-8") as f:
+                md_content = f.read()
+            assert "Tarea Creada En Foco" in md_content
             self._ok(name)
         except Exception as e:
             self._fail(name, e)

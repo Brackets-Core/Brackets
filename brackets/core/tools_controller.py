@@ -29,6 +29,7 @@ class ToolsController:
         safe_file_read_fn: Callable[[str], Optional[str]] = safe_file_read,
         content_parser_factory: Callable[[str], ContentParser] = ContentParser,
         run_pomodoro_fn: Optional[Callable[[str], None]] = None,
+        entity_manager=None,
     ):
         self.directory = directory
         self.vault_root = vault_root
@@ -44,6 +45,7 @@ class ToolsController:
         self.safe_file_read = safe_file_read_fn
         self.content_parser_factory = content_parser_factory
         self.run_pomodoro = run_pomodoro_fn
+        self.entity_manager = entity_manager
 
     def run(self) -> None:
         """Run tools submenu loop."""
@@ -117,6 +119,12 @@ class ToolsController:
             from brackets.modules.pomodoro_timer import run_pomodoro_standalone
 
             event_log = getattr(self, '_event_log', None)
-            run_pomodoro_standalone(self.vault_root, event_log=event_log)
+            run_pomodoro_standalone(
+                base_dir=self.vault_root,
+                event_log=event_log,
+                entity_manager=self.entity_manager,
+                input_fn=self.input,
+                print_fn=self.print,
+            )
             return
         self.run_pomodoro(self.vault_root)

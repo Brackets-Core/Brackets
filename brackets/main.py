@@ -571,6 +571,7 @@ class BitacoraManager:
     def handle_tools_menu(self) -> None:
         """Maneja el submenú de herramientas."""
         if self.tools_controller is None:
+            hub = self._get_daily_hub_controller()
             self.tools_controller = ToolsController(
                 directory=self.directory,
                 vault_root=self.vault_root,
@@ -580,6 +581,7 @@ class BitacoraManager:
                 read_single_key_fn=read_single_key,
                 input_fn=input,
                 print_fn=print,
+                entity_manager=hub.manager,
             )
             self.tools_controller._event_log = self.event_log
         self.tools_controller.run()

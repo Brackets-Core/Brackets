@@ -283,43 +283,51 @@ class PomodoroConsoleApp:
         iso_year, iso_week, _ = now.isocalendar()
         today_day = now.day
 
-        week = self.manager.load_week(iso_year, iso_week)
-        if not week and hasattr(self.manager, "weeks_dir") and os.path.exists(self.manager.weeks_dir):
-            import re
-            week_files = sorted([f for f in os.listdir(self.manager.weeks_dir) if re.match(r'^\d{4}-W\d{2}\.yaml$', f)])
-            if week_files:
-                last_fn = week_files[-1]
-                m = re.match(r'^(\d{4})-W(\d{2})\.yaml$', last_fn)
-                if m:
-                    week = self.manager.load_week(int(m.group(1)), int(m.group(2)))
+        if not self.current_week:
+            week = self.manager.load_week(iso_year, iso_week)
+            if not week and hasattr(self.manager, "weeks_dir") and os.path.exists(self.manager.weeks_dir):
+                import re
+                week_files = sorted([f for f in os.listdir(self.manager.weeks_dir) if re.match(r'^\d{4}-W\d{2}\.yaml$', f)])
+                if week_files:
+                    last_fn = week_files[-1]
+                    m = re.match(r'^(\d{4})-W(\d{2})\.yaml$', last_fn)
+                    if m:
+                        week = self.manager.load_week(int(m.group(1)), int(m.group(2)))
 
-        if not week and self.manager.weeks:
-            last_key = sorted(self.manager.weeks.keys())[-1]
-            week = self.manager.weeks[last_key]
+            if not week and self.manager.weeks:
+                last_key = sorted(self.manager.weeks.keys())[-1]
+                week = self.manager.weeks[last_key]
+            self.current_week = week
 
-        if not week or not week.days:
+        if not self.current_week or not self.current_week.days:
             return
 
-        self.current_week = week
-        for d in week.days:
-            if d.day_number == today_day:
-                self.current_day = d
-                return
-
-        self.current_day = week.days[-1]
+        if not self.current_day:
+            for d in self.current_week.days:
+                if d.day_number == today_day:
+                    self.current_day = d
+                    return
+            self.current_day = self.current_week.days[-1]
 
     def _sync_markdown_bitacora(self) -> None:
         if not self.manager or not self.current_week:
             return
         try:
+            import glob
             from brackets.generators.bitacora_renderer import BitacoraRenderer
             from brackets.utils.legacy_utils import generate_filename
-            md_path = generate_filename(
-                year=self.current_week.year,
-                month=self.current_week.month,
-                week=self.current_week.week_number,
-                directory=self.base_dir
-            )
+
+            pattern = f"*Week{self.current_week.week_number:02d}.md"
+            existing = glob.glob(os.path.join(self.base_dir, pattern))
+            if existing:
+                md_path = existing[0]
+            else:
+                md_path = generate_filename(
+                    year=self.current_week.year,
+                    month=self.current_week.month,
+                    week=self.current_week.week_number,
+                    directory=self.base_dir
+                )
             BitacoraRenderer.render_and_save_week(self.current_week, self.manager, md_path)
         except Exception:
             pass
@@ -433,14 +441,16 @@ class PomodoroConsoleApp:
         if self.current_day and task.id not in self.current_day.task_ids:
             self.current_day.task_ids.append(task.id)
             self.manager.save_week(self.current_week)
-            self._sync_markdown_bitacora()
+
+        self._sync_markdown_bitacora()
 
         self.engine.set_active_task(
             task_id=task.id,
             project_id=task.project_id,
             title=task.title
         )
-        self.print_fn(f"✅ Tarea creada y asignada: [{task.id}] {task.title}")
+        day_info = f" a hoy (Día {day_num})" if day_num else ""
+        self.print_fn(f"✅ Tarea creada y asignada{day_info}: [{task.id}] {task.title}")
 
     def _register_session(self, record: Dict) -> None:
         self.session_log.append(record)
