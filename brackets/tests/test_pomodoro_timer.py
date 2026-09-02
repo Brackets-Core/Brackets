@@ -193,6 +193,49 @@ class TestPomodoroTimer:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_console_app_create_new_task_with_listed_project(self):
+        name = "creación de nueva tarea con selección de proyecto listado"
+        import tempfile, shutil
+        from brackets.modules.pomodoro_timer import PomodoroConsoleApp
+        from brackets.managers.entity_manager import EntityManager
+        from brackets.models.entities import DaySchedule, WeekSchedule
+
+        tmp = tempfile.mkdtemp()
+        try:
+            mgr = EntityManager(os.path.join(tmp, "data"))
+            mgr.ensure_project("AI_RESEARCH", name="Investigación en IA")
+            week = WeekSchedule(year=2026, week_number=35, month=8, days=[
+                DaySchedule(day_number=24, location_emoji="🏠", task_ids=[])
+            ])
+            mgr.save_week(week)
+
+            inputs = [
+                "n",                     # Opción crear nueva
+                "Estudiar transformers", # Título
+                "1"                      # Seleccionar el primer proyecto listado
+            ]
+            prints = []
+
+            app = PomodoroConsoleApp(
+                base_dir=tmp,
+                entity_manager=mgr,
+                current_week=week,
+                current_day=week.days[0],
+                input_fn=lambda p="": inputs.pop(0),
+                print_fn=lambda *a, **k: prints.append(" ".join(str(x) for x in a))
+            )
+
+            app._select_task_flow()
+            assert app.engine.active_task_title == "Estudiar transformers"
+            assert app.engine.active_project_id == "AI_RESEARCH"
+            assert any("📁 VINCULAR A PROYECTO:" in p for p in prints)
+            assert any("AI_RESEARCH" in p for p in prints)
+            self._ok(name)
+        except Exception as e:
+            self._fail(name, e)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def run_all(self):
         print("\n🧪 TESTS: modules/pomodoro_timer.py")
         print("=" * 50)
@@ -202,6 +245,7 @@ class TestPomodoroTimer:
         self.test_active_task_association()
         self.test_console_app_select_today_task()
         self.test_console_app_create_new_task()
+        self.test_console_app_create_new_task_with_listed_project()
         print(f"\n📊 Resultado: ✅ {self.passed} | ❌ {self.failed}")
         return self.failed == 0
 

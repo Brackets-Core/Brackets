@@ -417,6 +417,46 @@ class PomodoroConsoleApp:
             self.engine.set_active_task(None, None, None)
             self.print_fn("ℹ️ Iniciando sin tarea específica (Trabajo libre).")
 
+    def _prompt_project_selection(self) -> Optional[str]:
+        """Muestra la lista de proyectos registrados para asociar a la tarea."""
+        if not self.manager:
+            proj = self.input_fn("Etiqueta de proyecto (opcional, ej: GENERAL): ").strip()
+            return proj or None
+
+        projects = self.manager.list_projects()
+        self.print_fn("\n📁 VINCULAR A PROYECTO:")
+        if projects:
+            for idx, p in enumerate(projects, start=1):
+                self.print_fn(f"  [{idx}] {p.id} ({p.name})")
+        else:
+            self.print_fn("  (No hay proyectos registrados)")
+        self.print_fn("  [0] Ninguno / Sin vincular")
+        self.print_fn("  [+] Crear y vincular nuevo proyecto")
+
+        p_choice = self.input_fn("Selecciona proyecto (0 por defecto): ").strip()
+        if not p_choice or p_choice in ("0", "n", "no"):
+            return None
+
+        if p_choice == "+":
+            new_pid = self.input_fn("Código del nuevo proyecto (ej: AMR_LOGISTICS): ").strip()
+            if new_pid:
+                new_pname = self.input_fn(f"Nombre descriptivo para '{new_pid}': ").strip()
+                p_obj = self.manager.ensure_project(new_pid, name=new_pname)
+                return p_obj.id
+            return None
+
+        try:
+            p_idx = int(p_choice)
+            if 1 <= p_idx <= len(projects):
+                return projects[p_idx - 1].id
+        except ValueError:
+            for p in projects:
+                if p_choice.upper() in (p.id.upper(), p.name.upper()):
+                    return p.id
+            return p_choice.upper()
+
+        return None
+
     def _create_task_flow(self) -> None:
         """Crea una nueva tarea y la asocia al foco actual."""
         self.print_fn("\n➕ NUEVA TAREA")
@@ -426,7 +466,7 @@ class PomodoroConsoleApp:
             self.engine.set_active_task(None, None, None)
             return
 
-        proj = self.input_fn("Etiqueta de proyecto (opcional, ej: GENERAL): ").strip() or None
+        proj = self._prompt_project_selection()
         day_num = self.current_day.day_number if self.current_day else None
         year = self.current_week.year if self.current_week else datetime.now().year
         week_num = self.current_week.week_number if self.current_week else datetime.now().isocalendar()[1]
