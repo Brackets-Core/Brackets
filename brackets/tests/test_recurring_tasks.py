@@ -165,6 +165,93 @@ class TestRecurringTasks(unittest.TestCase):
         self.assertTrue(deleted)
         self.assertNotIn(rec.id, self.manager.recurring_tasks)
 
+    def test_recurring_task_created_at_and_reuse_across_weeks(self):
+        """Verifica que las recurrentes tengan fecha de creación del día y se reaprovechen entre semanas."""
+        rec = self.manager.create_recurring_task(
+            title="Daily S^3",
+            recurrence_type="weekly_days",
+            days_of_week=[0, 2, 4]  # L, X, V
+        )
+
+        week34 = self.manager.load_week(2026, 34)
+        self.assertIsNotNone(week34)
+
+        # 1. Primera semana (W34)
+        self.manager.apply_recurring_tasks(week34)
+
+        mon_task_w34 = self.manager.tasks[week34.days[0].task_ids[-1]]
+        wed_task_w34 = self.manager.tasks[week34.days[2].task_ids[-1]]
+        fri_task_w34 = self.manager.tasks[week34.days[4].task_ids[-1]]
+
+        # Deben ser 3 tareas distintas en la misma semana
+        self.assertNotEqual(mon_task_w34.id, wed_task_w34.id)
+        self.assertNotEqual(wed_task_w34.id, fri_task_w34.id)
+        self.assertNotEqual(mon_task_w34.id, fri_task_w34.id)
+
+        # La fecha de creación debe corresponder al día exacto
+        self.assertEqual(mon_task_w34.created_at, "2026-08-17")
+        self.assertEqual(wed_task_w34.created_at, "2026-08-19")
+        self.assertEqual(fri_task_w34.created_at, "2026-08-21")
+
+        # Marcar la del lunes como completada
+        mon_task_w34.status = "done"
+        mon_task_w34.completed_at = "2026-08-17"
+
+        # Conteo inicial de tareas
+        initial_tasks_count = len(self.manager.tasks)
+
+        # 2. Generar nueva semana (W35)
+        week35 = WeekSchedule(
+            year=2026,
+            month=8,
+            week_number=35,
+            days=[DaySchedule(day_number=d, task_ids=[]) for d in [24, 25, 26, 27, 28]]
+        )
+        self.manager.save_week(week35)
+
+        # Aplicar recurrentes en W35
+        self.manager.apply_recurring_tasks(week35)
+
+        # No debe haber creado tareas nuevas en la base de datos (se reaprovechan las 3)
+        self.assertEqual(len(self.manager.tasks), initial_tasks_count)
+
+        mon_task_w35 = self.manager.tasks[week35.days[0].task_ids[-1]]
+        wed_task_w35 = self.manager.tasks[week35.days[2].task_ids[-1]]
+        fri_task_w35 = self.manager.tasks[week35.days[4].task_ids[-1]]
+
+        # Deben ser las mismas 3 instancias reaprovechadas
+        self.assertEqual(mon_task_w35.id, mon_task_w34.id)
+        self.assertEqual(wed_task_w35.id, wed_task_w34.id)
+        self.assertEqual(fri_task_w35.id, fri_task_w34.id)
+
+        # El estado de la tarea del lunes debe haberse reseteado a pending
+        self.assertEqual(mon_task_w35.status, "pending")
+        self.assertIsNone(mon_task_w35.completed_at)
+        # La fecha de creación debe actualizarse a la del día en que aparece en la bitácora
+        self.assertEqual(mon_task_w35.created_at, "2026-08-24")
+
+    def test_deduplicate_tasks(self):
+        """Verifica la desduplicación de tareas redundantes y actualización en semanas."""
+        # Crear tareas duplicadas artificiales
+        t1 = self.manager.create_task(title="Investigar Kaggle ML", status="done", project_id="AI")
+        t2 = self.manager.create_task(title="Investigar Kaggle ML", status="pending", project_id="POR_ASIGNAR")
+        t3 = self.manager.create_task(title="Investigar Kaggle ML", status="pending")
+
+        week = self.manager.load_week(2026, 34)
+        week.days[0].task_ids.append(t2.id)
+        week.week_task_ids.append(t3.id)
+        self.manager.save_week(week)
+
+        total_mapped, removed_count = self.manager.deduplicate_tasks()
+        self.assertGreaterEqual(removed_count, 2)
+
+        # Recargar semana y verificar que t2 y t3 fueron reemplazados por el canónico t1
+        reloaded_week = self.manager.load_week(2026, 34, reload=True)
+        self.assertIn(t1.id, reloaded_week.days[0].task_ids)
+        self.assertNotIn(t2.id, reloaded_week.days[0].task_ids)
+        self.assertIn(t1.id, reloaded_week.week_task_ids)
+        self.assertNotIn(t3.id, reloaded_week.week_task_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
