@@ -251,6 +251,59 @@ class TestMarkdownSyncService(unittest.TestCase):
         self.assertTrue(self.task_day24.is_done)
         self.assertEqual(self.task_day24.status, "done")
 
+    def test_sync_week_mark_task_as_cancelled_with_tildes(self):
+        """Verifica que tachar una tarea con ~~...~~ en el markdown la marca como cancelled sin crear duplicados."""
+        with open(self.md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Cambiar "  - [ ] Tarea Base Día 24" por "  - [ ] ~~Tarea Base Día 24~~"
+        content_modified = content.replace(
+            f"  - [ ] {self.task_day24.title}",
+            f"  - [ ] ~~{self.task_day24.title}~~"
+        )
+        with open(self.md_path, "w", encoding="utf-8") as f:
+            f.write(content_modified)
+
+        initial_tasks_count = len(self.manager.tasks)
+        synced = self.sync_service.sync_week_from_markdown(self.md_path, 2026, 35)
+        self.assertTrue(synced)
+
+        # No debe haber creado una nueva tarea duplicada
+        self.assertEqual(len(self.manager.tasks), initial_tasks_count)
+
+        # La tarea existente debe estar cancelada con título limpio
+        task = self.manager.tasks[self.task_day24.id]
+        self.assertTrue(task.is_cancelled)
+        self.assertEqual(task.status, "cancelled")
+        self.assertEqual(task.title, "Tarea Base Día 24")
+
+        # Verificar renderizado de vuelta a Markdown
+        rendered_md = BitacoraRenderer.render_week(self.week, self.manager)
+        self.assertIn(f"  - [ ] ~~{self.task_day24.title}~~", rendered_md)
+
+    def test_sync_week_create_new_cancelled_task(self):
+        """Verifica que una nueva tarea introducida como tachada se crea con status cancelled y título limpio."""
+        with open(self.md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        content_modified = content.replace(
+            "## 🚗25",
+            "## 🚗25\n  - [ ] ~~Reunión Anulada [GENERAL]~~"
+        )
+        with open(self.md_path, "w", encoding="utf-8") as f:
+            f.write(content_modified)
+
+        synced = self.sync_service.sync_week_from_markdown(self.md_path, 2026, 35)
+        self.assertTrue(synced)
+
+        day25 = next(d for d in self.week.days if d.day_number == 25)
+        self.assertEqual(len(day25.task_ids), 1)
+
+        task = self.manager.tasks[day25.task_ids[0]]
+        self.assertTrue(task.is_cancelled)
+        self.assertEqual(task.title, "Reunión Anulada [GENERAL]")
+        self.assertNotIn("~~", task.title)
+
 
 if __name__ == "__main__":
     unittest.main()

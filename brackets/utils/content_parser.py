@@ -75,27 +75,28 @@ class ContentParser:
                 is_pending = bool(re.match(PENDING_TASK_PATTERN, line))
                 is_completed = bool(re.match(COMPLETED_TASK_PATTERN, line))
                 is_subsection = line.strip().startswith('### ')
+                is_cancelled = bool(re.search(r'-\s*\[[ xX]?\]\s*~~.+?~~', line)) or (line.strip().startswith("- ~~") and line.strip().endswith("~~"))
 
-                if not (is_pending or is_completed or is_subsection):
+                if not (is_pending or is_completed or is_subsection or is_cancelled):
                     continue
 
                 indent = len(line) - len(line.lstrip())
                 while stack and indent <= stack[-1][0]:
                     stack.pop()
 
-                # Verificar si algún ancestro en el stack está completado
+                # Verificar si algún ancestro en el stack está completado o cancelado
                 has_completed_ancestor = any(is_task and completed for _, is_task, completed in stack)
 
-                # Solo procesar si NO tiene un ancestro completado Y NO está completada ella misma
-                if (is_pending or is_subsection) and not has_completed_ancestor and not is_completed:
+                # Solo procesar si NO tiene un ancestro completado/cancelado Y NO está completada/cancelada ella misma
+                if (is_pending or is_subsection) and not has_completed_ancestor and not is_completed and not is_cancelled:
                     key = line.strip()
                     if key not in seen:
                         pending_tasks.append(line)
                         seen.add(key)
 
-                if is_pending:
+                if is_pending and not is_cancelled:
                     stack.append((indent, True, False))
-                elif is_completed:
+                elif is_completed or is_cancelled:
                     stack.append((indent, True, True))
                 else:
                     stack.append((indent, False, False))

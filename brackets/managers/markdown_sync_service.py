@@ -67,6 +67,36 @@ class MarkdownSyncService:
         self.manager.save_week(week)
         return True
 
+    @staticmethod
+    def _parse_task_status_and_title(raw_text: str, is_checkbox_done: bool) -> Tuple[str, str]:
+        """
+        Determina el estado ('done', 'cancelled', 'pending') y el título limpio de una tarea.
+        Si la tarea está tachada con ~~...~~, se considera 'cancelled' y se limpian los delimitadores ~~.
+        """
+        text = raw_text.strip()
+
+        # Caso 1: Todo el texto está envuelto en ~~...~~ (ej: ~~Seguimiento Reporting~~)
+        if text.startswith("~~") and text.endswith("~~") and len(text) >= 4:
+            clean = text[2:-2].strip()
+            return "cancelled", clean
+
+        # Caso 2: Tachado con etiqueta de proyecto al final (ej: ~~Seguimiento Reporting~~ [GENERAL])
+        m_proj_suffix = re.match(r'^~~(.+?)~~\s*(\[[A-Za-z0-9_-]+\])$', text)
+        if m_proj_suffix:
+            clean = f"{m_proj_suffix.group(1).strip()} {m_proj_suffix.group(2).strip()}"
+            return "cancelled", clean
+
+        # Caso 3: Tachado con etiqueta de proyecto al inicio (ej: [GENERAL] ~~Seguimiento Reporting~~)
+        m_proj_prefix = re.match(r'^(\[[A-Za-z0-9_-]+\])\s*~~(.+?)~~$', text)
+        if m_proj_prefix:
+            clean = f"{m_proj_prefix.group(1).strip()} {m_proj_prefix.group(2).strip()}"
+            return "cancelled", clean
+
+        # Caso 4: No está tachada en su totalidad
+        if is_checkbox_done:
+            return "done", text
+        return "pending", text
+
     def _parse_markdown_sections(self, content: str) -> Dict[str, Any]:
         """Trocea el documento Markdown en sus secciones semánticas."""
         lines = content.splitlines()
@@ -74,9 +104,9 @@ class MarkdownSyncService:
         current_day_num = None
 
         topics_lines: List[str] = []
-        week_tasks_lines: List[Tuple[bool, str]] = []
+        week_tasks_lines: List[Tuple[str, str]] = []
         notes_raw_lines: List[str] = []
-        days: Dict[int, List[Tuple[bool, str]]] = {}
+        days: Dict[int, List[Tuple[str, str]]] = {}
         days_meta: Dict[int, Dict[str, Any]] = {}
 
         for line in lines:
@@ -136,7 +166,8 @@ class MarkdownSyncService:
                 if m_chk:
                     t_text = m_chk.group(2).strip()
                     if t_text:
-                        week_tasks_lines.append((m_chk.group(1).lower() == 'x', t_text))
+                        status, clean_title = self._parse_task_status_and_title(t_text, m_chk.group(1).lower() == 'x')
+                        week_tasks_lines.append((status, clean_title))
                 else:
                     m_item = re.match(r'^\s*-\s*(.*)$', line)
                     if m_item:
@@ -146,27 +177,29 @@ class MarkdownSyncService:
             elif current_section == "week_tasks":
                 m = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', line)
                 if m:
-                    is_done = m.group(1).lower() == 'x'
                     t_text = m.group(2).strip()
                     if t_text:
-                        week_tasks_lines.append((is_done, t_text))
+                        status, clean_title = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
+                        week_tasks_lines.append((status, clean_title))
                 elif line.strip().startswith("- "):
                     t_text = line.strip()[2:].strip()
                     if t_text:
-                        week_tasks_lines.append((False, t_text))
+                        status, clean_title = self._parse_task_status_and_title(t_text, False)
+                        week_tasks_lines.append((status, clean_title))
             elif current_section == "notes":
                 notes_raw_lines.append(line)
             elif current_section == "day" and current_day_num is not None:
                 m = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', line)
                 if m:
-                    is_done = m.group(1).lower() == 'x'
                     t_text = m.group(2).strip()
                     if t_text:
-                        days[current_day_num].append((is_done, t_text))
+                        status, clean_title = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
+                        days[current_day_num].append((status, clean_title))
                 elif line.strip().startswith("- "):
                     t_text = line.strip()[2:].strip()
                     if t_text:
-                        days[current_day_num].append((False, t_text))
+                        status, clean_title = self._parse_task_status_and_title(t_text, False)
+                        days[current_day_num].append((status, clean_title))
 
         # Parsear bloques de notas a partir de notes_raw_lines
         notes_blocks = self._parse_notes_blocks(notes_raw_lines)
@@ -256,17 +289,31 @@ class MarkdownSyncService:
                 if topic.id not in week.topic_ids:
                     week.topic_ids.append(topic.id)
 
-    def _reconcile_week_tasks(self, week: WeekSchedule, task_tuples: List[Tuple[bool, str]], today_str: str) -> None:
+    def _reconcile_week_tasks(self, week: WeekSchedule, task_tuples: List[Tuple[str, str]], today_str: str) -> None:
         """Reconcilia la lista de tareas semanales sin día concreto."""
         current_tasks = [self.manager.tasks[tid] for tid in week.week_task_ids if tid in self.manager.tasks]
         new_week_task_ids: List[str] = []
 
-        for is_done, title in task_tuples:
+        for status, title in task_tuples:
             matched_task = next((t for t in current_tasks if t.title == title), None)
+            if not matched_task:
+                matched_task = next((t for t in current_tasks if t.title.replace("~~", "").strip() == title), None)
+
             if matched_task:
-                if matched_task.is_done != is_done:
-                    matched_task.status = "done" if is_done else "pending"
-                    matched_task.completed_at = today_str if is_done else None
+                if "~~" in matched_task.title:
+                    matched_task.title = title
+
+                if status == "cancelled":
+                    matched_task.status = "cancelled"
+                    matched_task.completed_at = None
+                elif status == "done":
+                    matched_task.status = "done"
+                    if not matched_task.completed_at:
+                        matched_task.completed_at = today_str
+                else:
+                    matched_task.status = "pending"
+                    matched_task.completed_at = None
+
                 if matched_task.id not in new_week_task_ids:
                     new_week_task_ids.append(matched_task.id)
             else:
@@ -280,10 +327,10 @@ class MarkdownSyncService:
                     project_id=proj_id,
                     is_week_task=True,
                     year=week.year,
-                    week_num=week.week_number
+                    week_num=week.week_number,
+                    status=status
                 )
-                if is_done:
-                    new_task.status = "done"
+                if status == "done":
                     new_task.completed_at = today_str
                 if new_task.id not in new_week_task_ids:
                     new_week_task_ids.append(new_task.id)
@@ -324,70 +371,20 @@ class MarkdownSyncService:
                         week_num=week_num
                     )
 
-    def _reconcile_all_days(
-        self,
-        week: WeekSchedule,
-        days_dict: Dict[int, List[Tuple[bool, str]]],
-        days_meta: Dict[int, Dict[str, Any]],
-        year: int,
-        week_num: int,
-        today_str: str
-    ) -> None:
-        """
-        Reconcilia tareas de todos los días de la semana de forma holística:
-        - Si un día adicional (ej: guardia/intervención de fin de semana) aparece en el markdown, se añade a week.days.
-        - Si una tarea está completada ([x]), se asigna al día donde se completó y se marca done.
-        - Si una tarea está pendiente ([ ]):
-            - Si aparece en múltiples días en el markdown (por haber sido arrastrada previamente),
-              SOLO se asigna al ÚLTIMO día donde aparece (o día activo).
-            - Se elimina de los días anteriores de la semana para evitar duplicidades.
-        - Se limpia cualquier ID duplicado dentro del mismo día o entre días para tareas pendientes.
-        """
-        day_by_number = {d.day_number: d for d in week.days}
-
-        # Asegurar que cualquier día presente en el markdown esté registrado en la semana
-        for day_num in sorted(days_dict.keys()):
-            if day_num not in day_by_number:
-                meta = days_meta.get(day_num, {})
-                emoji = meta.get("emoji", "🛠️")
-                note = meta.get("note", "Intervención" if emoji == "🛠️" else None)
-                new_day = self.manager.add_day_to_week(
-                    week,
-                    day_number=day_num,
-                    location_emoji=emoji,
-                    location_note=note
-                )
-                day_by_number[day_num] = new_day
-
-        ordered_day_numbers = [d.day_number for d in week.days]
-
-        pending_task_latest_day: Dict[str, int] = {}
-        done_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
-
-        for day_num in ordered_day_numbers:
-            tuples = days_dict.get(day_num, [])
-            for is_done, title in tuples:
-                clean_title = title.strip()
-                if not clean_title:
-                    continue
-                if is_done:
-                    done_tasks_by_day.setdefault(day_num, []).append(clean_title)
-                else:
-                    # Guardar el último día donde aparece como pendiente
-                    pending_task_latest_day[clean_title] = day_num
-
     def _find_task_for_day(self, day: DaySchedule, week: WeekSchedule, title: str) -> Optional[Task]:
         """
         Busca inteligentemente una tarea con ese título priorizando:
         1. Tareas asignadas a este día concreto.
         2. Tareas en otros días de esta misma semana o en week_task_ids.
-        3. Tareas pendientes globales no resueltas (sin recurring_id).
+        3. Tareas pendientes/canceladas globales no resueltas (sin recurring_id).
         Evita reutilizar tareas recurrentes o completadas de semanas/meses anteriores.
         """
+        clean_target = title.replace("~~", "").strip()
+
         # 1. En este día
         for tid in day.task_ids:
             t = self.manager.tasks.get(tid)
-            if t and t.title == title:
+            if t and (t.title == title or t.title.replace("~~", "").strip() == clean_target):
                 return t
 
         # 2. En otros días de esta semana
@@ -395,13 +392,13 @@ class MarkdownSyncService:
             if other_day.day_number != day.day_number:
                 for tid in other_day.task_ids:
                     t = self.manager.tasks.get(tid)
-                    if t and t.title == title:
+                    if t and (t.title == title or t.title.replace("~~", "").strip() == clean_target):
                         return t
 
         # 3. En tareas de la semana
         for tid in week.week_task_ids:
             t = self.manager.tasks.get(tid)
-            if t and t.title == title:
+            if t and (t.title == title or t.title.replace("~~", "").strip() == clean_target):
                 return t
 
         # 4. Comprobar si coincide con una tarea recurrente activa
@@ -410,9 +407,9 @@ class MarkdownSyncService:
         if is_recurring:
             return None
 
-        # 5. Tarea pendiente global no asignada a otra semana
+        # 5. Tarea pendiente o cancelada global no asignada a otra semana
         for t in self.manager.tasks.values():
-            if t.title == title and t.is_pending:
+            if (t.title == title or t.title.replace("~~", "").strip() == clean_target) and (t.is_pending or t.is_cancelled):
                 return t
 
         return None
@@ -420,14 +417,14 @@ class MarkdownSyncService:
     def _reconcile_all_days(
         self,
         week: WeekSchedule,
-        days_dict: Dict[int, List[Tuple[bool, str]]],
+        days_dict: Dict[int, List[Tuple[str, str]]],
         days_meta: Dict[int, Dict[str, Optional[str]]],
         year: int,
         week_num: int,
         today_str: str
     ) -> None:
         """
-        Reconcilia todos los días de la semana sincronizando tareas [x] y [ ],
+        Reconcilia todos los días de la semana sincronizando tareas [x], [ ] y canceladas ~~...~~,
         evitando duplicidades entre días para una misma tarea arrastrada.
         """
         day_by_number: Dict[int, DaySchedule] = {d.day_number: d for d in week.days}
@@ -447,15 +444,18 @@ class MarkdownSyncService:
 
         pending_task_latest_day: Dict[str, int] = {}
         done_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
+        cancelled_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
 
         for day_num in ordered_day_numbers:
             tuples = days_dict.get(day_num, [])
-            for is_done, title in tuples:
+            for status, title in tuples:
                 clean_title = title.strip()
                 if not clean_title:
                     continue
-                if is_done:
+                if status == "done":
                     done_tasks_by_day.setdefault(day_num, []).append(clean_title)
+                elif status == "cancelled":
+                    cancelled_tasks_by_day.setdefault(day_num, []).append(clean_title)
                 else:
                     # Guardar el último día donde aparece como pendiente
                     pending_task_latest_day[clean_title] = day_num
@@ -478,14 +478,45 @@ class MarkdownSyncService:
                         status="done"
                     )
                 else:
+                    if "~~" in matched_task.title:
+                        matched_task.title = title
                     matched_task.status = "done"
                     if not matched_task.completed_at:
                         matched_task.completed_at = today_str
 
                 new_day_task_ids[day_num].append(matched_task.id)
 
-        # 2. Reconciliar tareas PENDIENTES ([ ])
+        # 2. Reconciliar tareas CANCELADAS ([ ] ~~...~~) por día
+        for day_num, cancelled_titles in cancelled_tasks_by_day.items():
+            day = day_by_number.get(day_num)
+            if not day:
+                continue
+            for title in cancelled_titles:
+                matched_task = self._find_task_for_day(day, week, title)
+                if not matched_task:
+                    matched_task = self.manager.create_task(
+                        title=title,
+                        year=year,
+                        week_num=week_num,
+                        day_number=day_num,
+                        status="cancelled"
+                    )
+                else:
+                    if "~~" in matched_task.title:
+                        matched_task.title = title
+                    matched_task.status = "cancelled"
+                    matched_task.completed_at = None
+
+                new_day_task_ids[day_num].append(matched_task.id)
+
+        # 3. Reconciliar tareas PENDIENTES ([ ])
         for title, latest_day_num in pending_task_latest_day.items():
+            # Si se marcó como completada o cancelada, no crearla/mantenerla como pendiente
+            if any(title in titles for titles in done_tasks_by_day.values()):
+                continue
+            if any(title in titles for titles in cancelled_tasks_by_day.values()):
+                continue
+
             target_day = day_by_number.get(latest_day_num)
             if not target_day:
                 continue
@@ -500,13 +531,15 @@ class MarkdownSyncService:
                     status="pending"
                 )
             else:
-                if matched_task.is_done:
+                if "~~" in matched_task.title:
+                    matched_task.title = title
+                if matched_task.is_done or matched_task.is_cancelled:
                     matched_task.status = "pending"
                     matched_task.completed_at = None
 
             new_day_task_ids[latest_day_num].append(matched_task.id)
 
-        # 3. Asignar los task_ids a cada día, deduplicar preservando orden y remover de tareas semanales
+        # 4. Asignar los task_ids a cada día, deduplicar preservando orden y remover de tareas semanales
         for day in week.days:
             seen_ids = set()
             seen_titles = set()

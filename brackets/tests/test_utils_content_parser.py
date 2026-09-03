@@ -95,6 +95,33 @@ class TestContentParser:
             print(f"❌ Test subtareas de padre completado falló: {e}")
             self.failed += 1
 
+    def test_extract_pending_tasks_ignores_cancelled_tasks(self):
+        """Test que tareas tachadas con ~~ (canceladas) no se extraen como pendientes."""
+        try:
+            content = """# Week 01
+
+## ✅Topics
+  - [ ] Tarea normal activa
+  - [ ] ~~Tarea cancelada con checkbox~~
+  - - ~~Tarea cancelada con guión~~
+  - [ ] ~~Tarea cancelada con subitems~~
+    - [ ] Subtarea de cancelada
+"""
+            parser = ContentParser(content)
+            tasks = parser.extract_pending_tasks()
+            joined = "\n".join(tasks)
+
+            assert "Tarea normal activa" in joined, "Debe incluir tarea normal activa"
+            assert "Tarea cancelada con checkbox" not in joined, "No debe incluir tarea cancelada"
+            assert "Tarea cancelada con guión" not in joined, "No debe incluir tarea cancelada con guión"
+            assert "Subtarea de cancelada" not in joined, "No debe incluir subtarea de tarea cancelada"
+
+            print("✅ Test: tareas canceladas (tachadas) no se extraen como pendientes")
+            self.passed += 1
+        except Exception as e:
+            print(f"❌ Test tareas canceladas no se extraen falló: {e}")
+            self.failed += 1
+
     def test_extract_daily_dates(self):
         """Test que extract_daily_dates extrae fechas correctamente."""
         try:
@@ -159,6 +186,7 @@ class TestContentParser:
         self.test_extract_week_info_from_filename()
         self.test_extract_pending_tasks()
         self.test_extract_pending_tasks_ignores_children_of_completed_parent()
+        self.test_extract_pending_tasks_ignores_cancelled_tasks()
         self.test_extract_daily_dates()
         self.test_clean_completed_tasks()
 
