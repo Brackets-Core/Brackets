@@ -118,6 +118,11 @@ class RecurringTask:
     topic_id: Optional[str] = None
     active: bool = True
     created_at: str = ""
+    task_type: str = "task"  # "task", "meeting"
+
+    @property
+    def is_meeting(self) -> bool:
+        return self.task_type == "meeting"
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> RecurringTask:
@@ -138,7 +143,8 @@ class RecurringTask:
             project_id=data.get("project_id"),
             topic_id=data.get("topic_id"),
             active=data.get("active", True),
-            created_at=data.get("created_at", "")
+            created_at=data.get("created_at", ""),
+            task_type=data.get("task_type", "task")
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -156,6 +162,7 @@ class Task:
     project_id: Optional[str] = None
     topic_id: Optional[str] = None
     recurring_id: Optional[str] = None
+    task_type: str = "task"  # "task", "meeting"
 
     @property
     def is_done(self) -> bool:
@@ -173,6 +180,10 @@ class Task:
     def is_recurring(self) -> bool:
         return self.recurring_id is not None
 
+    @property
+    def is_meeting(self) -> bool:
+        return self.task_type == "meeting"
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Task:
         return cls(
@@ -183,7 +194,8 @@ class Task:
             completed_at=data.get("completed_at"),
             project_id=data.get("project_id"),
             topic_id=data.get("topic_id"),
-            recurring_id=data.get("recurring_id")
+            recurring_id=data.get("recurring_id"),
+            task_type=data.get("task_type", "task")
         )
 
     def to_dict(self) -> Dict[str, Any]:

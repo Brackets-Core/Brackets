@@ -257,13 +257,14 @@ class DailyHubController:
                     self.print(f"  • {top.title}{proj_tag}")
             self.print("-" * 65)
 
-        self.print("📋 TAREAS DE HOY:")
+        self.print("📋 TAREAS Y REUNIONES DE HOY:")
         if today_tasks:
             for idx, task in enumerate(today_tasks, start=1):
                 status_box = "[x]" if task.is_done else ("[ ] ~~" if task.is_cancelled else "[ ]")
                 suffix = "~~" if task.is_cancelled else ""
                 proj_tag = f" [{task.project_id}]" if task.project_id else ""
-                self.print(f"  [{idx}] {status_box} {task.title}{proj_tag}{suffix}")
+                type_icon = "🤝 " if task.is_meeting else ""
+                self.print(f"  [{idx}] {status_box} {type_icon}{task.title}{proj_tag}{suffix}")
         else:
             self.print("  (No hay tareas asignadas para este día)")
 
@@ -951,6 +952,18 @@ class DailyHubController:
 
         proj_id, topic_id = self.prompt_topic_or_project_selection(week)
 
+        is_meet_guess = any(w in title.lower() for w in ("reunión", "reunion", "daily", "meet", "sync", "cowork", "seguimiento", "review"))
+        self.print("\n¿Qué tipo de elemento es?")
+        self.print("  [1] Reunión (no transiciona entre días si no se realiza)")
+        self.print("  [2] Tarea recurrente")
+        t_type_input = self.input(f"Opción ({'1' if is_meet_guess else '2'} por defecto): ").strip()
+        if not t_type_input:
+            task_type = "meeting" if is_meet_guess else "task"
+        elif t_type_input == "1":
+            task_type = "meeting"
+        else:
+            task_type = "task"
+
         self.print("\nSelecciona tipo de recurrencia:")
         self.print("  [1] Días fijos cada semana (ej: Lunes, Miércoles, Viernes)")
         self.print("  [2] Cada N semanas en día concreto (ej: Viernes cada 4 semanas)")
@@ -974,14 +987,16 @@ class DailyHubController:
                 base_week=base_w,
                 day_of_week=wday,
                 project_id=proj_id,
-                topic_id=topic_id
+                topic_id=topic_id,
+                task_type=task_type
             )
         elif t_choice == "3":
             rec = self.manager.create_recurring_task(
                 title=title,
                 recurrence_type="week_tasks",
                 project_id=proj_id,
-                topic_id=topic_id
+                topic_id=topic_id,
+                task_type=task_type
             )
         else:
             self.print("Indica los días separados por comas:")
@@ -1014,7 +1029,8 @@ class DailyHubController:
                 recurrence_type="weekly_days",
                 days_of_week=sorted(list(set(days_list))),
                 project_id=proj_id,
-                topic_id=topic_id
+                topic_id=topic_id,
+                task_type=task_type
             )
 
         # Aplicar de inmediato a la semana en curso

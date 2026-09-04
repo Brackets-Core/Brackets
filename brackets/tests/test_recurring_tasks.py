@@ -294,6 +294,35 @@ class TestRecurringTasks(unittest.TestCase):
         self.assertNotIn(daily_task.id, friday.task_ids)
         self.assertNotIn(rec_task_id, friday.task_ids)
 
+    def test_meeting_task_type_and_immunity_to_rollover(self):
+        """Verifica que las reuniones (task_type='meeting') no salten entre días si no se realizan."""
+        rec_meeting = self.manager.create_recurring_task(
+            title="Data - BT",
+            recurrence_type="weekly_days",
+            days_of_week=[3],  # Jueves
+            task_type="meeting"
+        )
+        self.assertTrue(rec_meeting.is_meeting)
+
+        week = self.manager.load_week(2026, 34)
+        self.manager.apply_recurring_tasks(week)
+
+        thursday = week.days[3]
+        rec_task_id = next(tid for tid in thursday.task_ids if self.manager.tasks[tid].title == "Data - BT")
+        task = self.manager.tasks[rec_task_id]
+        self.assertTrue(task.is_meeting)
+        self.assertEqual(task.task_type, "meeting")
+        self.assertEqual(task.status, "pending")
+
+        # El viernes (día 4) se ejecuta rollover
+        friday = week.days[4]
+        rolled = self.manager.rollover_day_tasks(week, friday.day_number)
+
+        # La reunión no debe haberse arrastrado al viernes
+        self.assertNotIn(rec_task_id, friday.task_ids)
+        # Debe permanecer en el jueves
+        self.assertIn(rec_task_id, thursday.task_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

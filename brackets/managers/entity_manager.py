@@ -405,7 +405,8 @@ class EntityManager:
         day_of_week: int = 4,
         project_id: Optional[str] = None,
         topic_id: Optional[str] = None,
-        recurring_id: Optional[str] = None
+        recurring_id: Optional[str] = None,
+        task_type: str = "task"
     ) -> RecurringTask:
         """Registra una nueva tarea o reunión recurrente."""
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -426,7 +427,8 @@ class EntityManager:
             project_id=project_id,
             topic_id=topic_id,
             active=True,
-            created_at=today_str
+            created_at=today_str,
+            task_type=task_type
         )
         self.recurring_tasks[recurring_id] = rec
         self.save_recurring_tasks()
@@ -526,6 +528,7 @@ class EntityManager:
                         task.status = "pending"
                         task.completed_at = None
                         task.created_at = target_date
+                        task.task_type = rec.task_type
                         if rec.project_id and (not task.project_id or task.project_id == "POR_ASIGNAR"):
                             task.project_id = rec.project_id
                         task.topic_id = rec.topic_id
@@ -540,7 +543,8 @@ class EntityManager:
                             year=week.year,
                             week_num=week.week_number,
                             day_number=target_day.day_number,
-                            recurring_id=rec.id
+                            recurring_id=rec.id,
+                            task_type=rec.task_type
                         )
                         new_task.created_at = target_date
                         existing_rec_tasks.append(new_task)
@@ -574,6 +578,7 @@ class EntityManager:
                         task.status = "pending"
                         task.completed_at = None
                         task.created_at = target_date
+                        task.task_type = rec.task_type
                         if rec.project_id and (not task.project_id or task.project_id == "POR_ASIGNAR"):
                             task.project_id = rec.project_id
                         task.topic_id = rec.topic_id
@@ -588,7 +593,8 @@ class EntityManager:
                             year=week.year,
                             week_num=week.week_number,
                             day_number=target_day.day_number,
-                            recurring_id=rec.id
+                            recurring_id=rec.id,
+                            task_type=rec.task_type
                         )
                         new_task.created_at = target_date
                         existing_rec_tasks.append(new_task)
@@ -617,6 +623,7 @@ class EntityManager:
                         task.status = "pending"
                         task.completed_at = None
                         task.created_at = target_date
+                        task.task_type = rec.task_type
                         if rec.project_id and (not task.project_id or task.project_id == "POR_ASIGNAR"):
                             task.project_id = rec.project_id
                         task.topic_id = rec.topic_id
@@ -631,7 +638,8 @@ class EntityManager:
                             is_week_task=True,
                             year=week.year,
                             week_num=week.week_number,
-                            recurring_id=rec.id
+                            recurring_id=rec.id,
+                            task_type=rec.task_type
                         )
                         new_task.created_at = target_date
                         existing_rec_tasks.append(new_task)
@@ -803,7 +811,8 @@ class EntityManager:
         is_topic: bool = False,
         topic_id: Optional[str] = None,
         is_week_task: bool = False,
-        recurring_id: Optional[str] = None
+        recurring_id: Optional[str] = None,
+        task_type: str = "task"
     ) -> Task:
         """Crea una tarea, la registra en la tabla y opcionalmente la vincula a la semana/día."""
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -823,7 +832,8 @@ class EntityManager:
             completed_at=today_str if status == "done" else None,
             project_id=project_id,
             topic_id=topic_id,
-            recurring_id=recurring_id
+            recurring_id=recurring_id,
+            task_type=task_type
         )
 
         self.tasks[task_id] = task
@@ -1249,8 +1259,8 @@ class EntityManager:
             for tid in list(prev_day.task_ids):
                 task = self.tasks.get(tid)
                 if task and task.is_pending:
-                    # Las tareas recurrentes (dailies, reuniones fijas) pertenecen a su día y no se arrastran a días posteriores
-                    if task.is_recurring:
+                    # Las reuniones y tareas recurrentes pertenecen a su día y no se arrastran a días posteriores
+                    if task.is_meeting or task.is_recurring:
                         continue
                     prev_day.task_ids.remove(tid)
                     if tid not in current_day.task_ids:
@@ -1346,14 +1356,14 @@ class EntityManager:
         # Revisar week_task_ids y topics_task_ids de la semana anterior
         for tid in list(prev_week.week_task_ids) + list(prev_week.topics_task_ids):
             task = self.tasks.get(tid)
-            if task and task.is_pending and tid not in pending_from_prev:
+            if task and task.is_pending and not task.is_meeting and not task.is_recurring and tid not in pending_from_prev:
                 pending_from_prev.append(tid)
 
         # Revisar días
         for d in prev_week.days:
             for tid in d.task_ids:
                 task = self.tasks.get(tid)
-                if task and task.is_pending and tid not in pending_from_prev:
+                if task and task.is_pending and not task.is_meeting and not task.is_recurring and tid not in pending_from_prev:
                     pending_from_prev.append(tid)
 
         rolled_count = 0
