@@ -402,9 +402,12 @@ class MarkdownSyncService:
                 return t
 
         # 4. Comprobar si coincide con una tarea recurrente activa
-        # Si es una tarea recurrente, NUNCA reutilizar una tarea histórica antigua de meses atrás
-        is_recurring = any(r.title == title for r in self.manager.list_recurring_tasks())
-        if is_recurring:
+        matching_rec = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+        if matching_rec:
+            # Buscar una tarea existente asociada a esta recurrencia
+            rec_task = next((t for t in self.manager.tasks.values() if t.recurring_id == matching_rec.id), None)
+            if rec_task:
+                return rec_task
             return None
 
         # 5. Tarea pendiente o cancelada global no asignada a otra semana

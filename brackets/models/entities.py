@@ -169,6 +169,10 @@ class Task:
     def is_pending(self) -> bool:
         return self.status.lower() == "pending"
 
+    @property
+    def is_recurring(self) -> bool:
+        return self.recurring_id is not None
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Task:
         return cls(

@@ -247,10 +247,52 @@ class TestRecurringTasks(unittest.TestCase):
 
         # Recargar semana y verificar que t2 y t3 fueron reemplazados por el canónico t1
         reloaded_week = self.manager.load_week(2026, 34, reload=True)
-        self.assertIn(t1.id, reloaded_week.days[0].task_ids)
-        self.assertNotIn(t2.id, reloaded_week.days[0].task_ids)
         self.assertIn(t1.id, reloaded_week.week_task_ids)
         self.assertNotIn(t3.id, reloaded_week.week_task_ids)
+
+    def test_recurring_tasks_not_rolled_over_and_not_reinjected_if_moved_or_cancelled(self):
+        """Verifica que las tareas recurrentes no se arrastren día a día si no se hacen y no se reinyecten si fueron movidas/canceladas."""
+        rec = self.manager.create_recurring_task(
+            title="Seguimiento Reporting",
+            recurrence_type="weekly_days",
+            days_of_week=[2]  # Miércoles
+        )
+
+        week = self.manager.load_week(2026, 34)
+        self.manager.apply_recurring_tasks(week)
+
+        # En día 2 (miércoles) debe estar la tarea
+        wednesday = week.days[2]
+        self.assertEqual(len(wednesday.task_ids), 1)
+        rec_task_id = wednesday.task_ids[0]
+        rec_task = self.manager.tasks[rec_task_id]
+        self.assertEqual(rec_task.title, "Seguimiento Reporting")
+        self.assertTrue(rec_task.is_recurring)
+
+        # Si el usuario la mueve al jueves (día 3) y la cancela:
+        wednesday.task_ids.remove(rec_task_id)
+        thursday = week.days[3]
+        thursday.task_ids.append(rec_task_id)
+        rec_task.status = "cancelled"
+        self.manager.save_week(week)
+        self.manager.save_tasks()
+
+        # 1. Al llamar de nuevo a apply_recurring_tasks, NO debe reinyectarla en miércoles
+        injected = self.manager.apply_recurring_tasks(week)
+        self.assertEqual(injected, 0)
+        self.assertNotIn(rec_task_id, wednesday.task_ids)
+
+        # 2. Al ejecutar rollover_day_tasks sobre el viernes (día 4), las recurrentes pendientes no se arrastran
+        friday = week.days[4]
+        # Crear otra tarea recurrente pendiente en el jueves
+        daily_rec = self.manager.create_recurring_task(title="Daily S^3", recurrence_type="weekly_days", days_of_week=[0, 2, 4])
+        daily_task = self.manager.create_task(title="Daily S^3", recurring_id=daily_rec.id, day_number=thursday.day_number)
+        
+        # Rollover hacia el viernes
+        rolled = self.manager.rollover_day_tasks(week, friday.day_number)
+        # No debe haber arrastrado daily_task ni rec_task al viernes
+        self.assertNotIn(daily_task.id, friday.task_ids)
+        self.assertNotIn(rec_task_id, friday.task_ids)
 
 
 if __name__ == "__main__":

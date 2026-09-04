@@ -515,6 +515,14 @@ class EntityManager:
                     # REAPROVECHAR instancia existente correspondiente al slot `idx`
                     if idx < len(existing_rec_tasks):
                         task = existing_rec_tasks[idx]
+                        # Si esta instancia ya está en target_day, no hacer nada
+                        if task.id in target_day.task_ids:
+                            continue
+                        # Si esta instancia ya fue asignada a otro día de la semana (por haber sido movida),
+                        # no duplicarla ni reinyectarla en target_day
+                        if any(task.id in d.task_ids for d in week.days):
+                            continue
+
                         task.status = "pending"
                         task.completed_at = None
                         task.created_at = target_date
@@ -522,8 +530,7 @@ class EntityManager:
                             task.project_id = rec.project_id
                         task.topic_id = rec.topic_id
                         task.recurring_id = rec.id
-                        if task.id not in target_day.task_ids:
-                            target_day.task_ids.append(task.id)
+                        target_day.task_ids.append(task.id)
                         injected_count += 1
                     else:
                         new_task = self.create_task(
@@ -560,6 +567,10 @@ class EntityManager:
 
                     if existing_rec_tasks:
                         task = existing_rec_tasks[0]
+                        # Si ya está asignada en cualquier día de la semana, no duplicar
+                        if any(task.id in d.task_ids for d in week.days):
+                            continue
+
                         task.status = "pending"
                         task.completed_at = None
                         task.created_at = target_date
@@ -567,8 +578,7 @@ class EntityManager:
                             task.project_id = rec.project_id
                         task.topic_id = rec.topic_id
                         task.recurring_id = rec.id
-                        if task.id not in target_day.task_ids:
-                            target_day.task_ids.append(task.id)
+                        target_day.task_ids.append(task.id)
                         injected_count += 1
                     else:
                         new_task = self.create_task(
@@ -601,6 +611,9 @@ class EntityManager:
 
                     if existing_rec_tasks:
                         task = existing_rec_tasks[0]
+                        if task.id in week.week_task_ids or any(task.id in d.task_ids for d in week.days):
+                            continue
+
                         task.status = "pending"
                         task.completed_at = None
                         task.created_at = target_date
@@ -608,8 +621,7 @@ class EntityManager:
                             task.project_id = rec.project_id
                         task.topic_id = rec.topic_id
                         task.recurring_id = rec.id
-                        if task.id not in week.week_task_ids:
-                            week.week_task_ids.append(task.id)
+                        week.week_task_ids.append(task.id)
                         injected_count += 1
                     else:
                         new_task = self.create_task(
@@ -666,7 +678,11 @@ class EntityManager:
 
             for idx, extra in enumerate(matching[k:]):
                 slot_idx = idx % k
-                replacement_map[extra.id] = canonicals[slot_idx].id
+                canonical_slot = canonicals[slot_idx]
+                replacement_map[extra.id] = canonical_slot.id
+                if canonical_slot.is_pending and (extra.is_done or extra.is_cancelled):
+                    canonical_slot.status = extra.status
+                    canonical_slot.completed_at = extra.completed_at
 
         # 2. Tareas No Recurrentes
         from collections import defaultdict
@@ -1233,6 +1249,9 @@ class EntityManager:
             for tid in list(prev_day.task_ids):
                 task = self.tasks.get(tid)
                 if task and task.is_pending:
+                    # Las tareas recurrentes (dailies, reuniones fijas) pertenecen a su día y no se arrastran a días posteriores
+                    if task.is_recurring:
+                        continue
                     prev_day.task_ids.remove(tid)
                     if tid not in current_day.task_ids:
                         current_day.task_ids.append(tid)
