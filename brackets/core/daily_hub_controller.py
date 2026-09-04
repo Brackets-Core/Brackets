@@ -302,8 +302,9 @@ class DailyHubController:
             self.print(f"\n⚡ Fin de semana detectado: pulsa [+] para activar {day_name} {now.day} (Intervención/Guardia)")
 
         self.print("\n" + "=" * 65)
-        self.print("  [1-9] ✅ Marcar tarea   [t] 📋 Tareas   [n] 📝 Notas   [p] 📁 Proyectos")
-        self.print("  [d] 📅 Cambiar día      [l] 🔗 Defs     [k] 🍅 Pomodoro [y] 🔄 Sync   [0/b] Menú   [q] Salir")
+        self.print("  [1-9] ✅ Marcar tarea   [x] ❌ Tachar tarea   [t] 📋 Tareas   [n] 📝 Notas")
+        self.print("  [p] 📁 Proyectos        [d] 📅 Cambiar día    [l] 🔗 Defs     [k] 🍅 Pomodoro")
+        self.print("  [y] 🔄 Sync             [0/b] Menú            [q] Salir")
         self.print("=" * 65)
 
         return ordered_task_ids
@@ -474,6 +475,10 @@ class DailyHubController:
                 self._action_toggle_task(week, day, ordered_task_ids)
                 continue
 
+            if choice in ("x", "cancel"):
+                self._action_cancel_task(week, day, ordered_task_ids)
+                continue
+
             if choice == "j":
                 self._action_jira_task(week, day)
                 continue
@@ -506,7 +511,7 @@ class DailyHubController:
             MenuOption("1", "➕ Nueva Tarea HOY", "new_task", aliases=["n"]),
             MenuOption("2", "🎫 Tarea Jira HOY", "jira_task", aliases=["j"]),
             MenuOption("3", "✅ Marcar Tarea (completar / reactivar)", "toggle_task", aliases=["c", "m"]),
-            MenuOption("4", "🗑️  Borrar Tarea", "delete_task", aliases=["d", "b"]),
+            MenuOption("4", "🗑️  Borrar Tarea de la Bitácora (eliminar)", "delete_task", aliases=["d", "b"]),
             MenuOption("5", "🎯 Crear nuevo Topic Semanal", "new_topic", aliases=["t"]),
             MenuOption("6", "📋 Nueva Tarea SEMANAL (sin día fijo)", "new_week_task", aliases=["w"]),
             MenuOption("7", "➡️  Agendar Tarea Semanal / Topic a HOY", "schedule_topic", aliases=["a"]),
@@ -515,6 +520,7 @@ class DailyHubController:
             MenuOption("10", "🔄 Sincronizar Semana Actual (.md ➔ YAML)", "sync_markdown", aliases=["y", "sync"]),
             MenuOption("11", "🔗 Crear / Gestionar Definiciones", "manage_defs", aliases=["l", "f", "def", "link"]),
             MenuOption("12", "🍅 Iniciar Pomodoro Timer", "run_pomodoro", aliases=["k", "pomo"]),
+            MenuOption("13", "❌ Cancelar / Tachar Tarea (conservar en tabla)", "cancel_task", aliases=["x", "cancel"]),
         ]
 
         title = f"📋 G E S T I Ó N  D E  T A R E A S  (Día {day.day_number})"
@@ -547,6 +553,9 @@ class DailyHubController:
                     return "refresh"
                 elif opt.action_id == "toggle_task":
                     self._action_toggle_task(week, day, ordered_task_ids)
+                    return "refresh"
+                elif opt.action_id == "cancel_task":
+                    self._action_cancel_task(week, day, ordered_task_ids)
                     return "refresh"
                 elif opt.action_id == "edit_task":
                     self._action_edit_task(week, day, ordered_task_ids)
@@ -718,13 +727,37 @@ class DailyHubController:
             self.print("❌ Número fuera de rango.")
             self.input("Presiona Enter para continuar...")
 
+    def _action_cancel_task(self, week: WeekSchedule, day: DaySchedule, ordered_task_ids: List[str]) -> None:
+        if not ordered_task_ids:
+            self.print("❌ No hay tareas para cancelar.")
+            self.input("Presiona Enter para continuar...")
+            return
+        self._print_day_tasks_list(day, ordered_task_ids)
+        num_str = self.input(f"Número de tarea a cancelar/tachar (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
+        if not num_str or num_str in ("0", "b", "c", "q"):
+            return
+        try:
+            num = int(num_str)
+            if 1 <= num <= len(ordered_task_ids):
+                target_id = ordered_task_ids[num - 1]
+                self.manager.cancel_task(target_id)
+                self._sync_markdown(week)
+                self.print("✅ Tarea cancelada (tachada con ~~ en la bitácora y conservada en la base de datos).")
+                self.input("Presiona Enter para continuar...")
+            else:
+                self.print("❌ Número fuera de rango.")
+                self.input("Presiona Enter para continuar...")
+        except ValueError:
+            self.print("❌ Ingresa un número válido.")
+            self.input("Presiona Enter para continuar...")
+
     def _action_delete_task(self, week: WeekSchedule, day: DaySchedule, ordered_task_ids: List[str]) -> None:
         if not ordered_task_ids:
             self.print("❌ No hay tareas para borrar.")
             self.input("Presiona Enter para continuar...")
             return
         self._print_day_tasks_list(day, ordered_task_ids)
-        num_str = self.input(f"Número de tarea a eliminar (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
+        num_str = self.input(f"Número de tarea a eliminar de la bitácora (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
         if not num_str or num_str in ("0", "b", "c", "q"):
             return
         try:
@@ -738,7 +771,7 @@ class DailyHubController:
                     day_number=day.day_number
                 )
                 self._sync_markdown(week)
-                self.print("✅ Tarea eliminada.")
+                self.print("🗑️ Tarea eliminada de la bitácora y de la base de datos.")
                 self.input("Presiona Enter para continuar...")
             else:
                 self.print("❌ Número fuera de rango.")

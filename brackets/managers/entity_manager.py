@@ -860,7 +860,7 @@ class EntityManager:
         return task
 
     def toggle_task(self, task_id: str) -> Optional[Task]:
-        """Alterna el estado de una tarea entre 'pending' y 'done'."""
+        """Alterna el estado de una tarea entre 'pending' y 'done', o reactiva si estaba 'cancelled'."""
         task = self.tasks.get(task_id)
         if not task:
             return None
@@ -871,12 +871,29 @@ class EntityManager:
             task.completed_at = None
             self.save_tasks()
             log4brackets.log_task_reopened(task.id, task.project_id, task.title)
+        elif task.is_cancelled:
+            task.status = "pending"
+            task.completed_at = None
+            self.save_tasks()
+            log4brackets.log_task_reopened(task.id, task.project_id, task.title)
         else:
             task.status = "done"
             task.completed_at = today_str
             self.save_tasks()
             log4brackets.log_task_completed(task.id, task.project_id, task.title)
 
+        return task
+
+    def cancel_task(self, task_id: str) -> Optional[Task]:
+        """Marca una tarea como 'cancelled' (tachada en la bitácora) sin eliminarla de la tabla de tareas."""
+        task = self.tasks.get(task_id)
+        if not task:
+            return None
+
+        task.status = "cancelled"
+        task.completed_at = None
+        self.save_tasks()
+        log4brackets.log_task_cancelled(task.id, task.project_id, task.title)
         return task
 
     def update_task(
@@ -908,6 +925,8 @@ class EntityManager:
         if task_id not in self.tasks:
             return False
 
+        task = self.tasks[task_id]
+
         # Desvincular de la semana si existe
         if year and week_num:
             week = self.load_week(year, week_num)
@@ -920,6 +939,7 @@ class EntityManager:
                             d.task_ids.remove(task_id)
                 self.save_week(week)
 
+        log4brackets.log_task_deleted(task.id, task.project_id, task.title)
         del self.tasks[task_id]
         self.save_tasks()
         return True
@@ -1325,6 +1345,36 @@ class EntityManager:
             for d in w.days:
                 scheduled.update(d.task_ids)
         return scheduled
+
+    def is_task_scheduled_in_other_weeks(self, task_id: str, exclude_year: int, exclude_week_num: int) -> bool:
+        """Comprueba si una tarea está asignada a alguna semana distinta de la indicada."""
+        target_filename = f"{exclude_year}-W{exclude_week_num:02d}.yaml"
+        if os.path.exists(self.weeks_dir):
+            for fname in os.listdir(self.weeks_dir):
+                if fname.endswith(".yaml") and fname != target_filename:
+                    try:
+                        wpath = os.path.join(self.weeks_dir, fname)
+                        with open(wpath, "r", encoding="utf-8") as f:
+                            data = yaml.safe_load(f)
+                        if data:
+                            if task_id in data.get("week_task_ids", []):
+                                return True
+                            if task_id in data.get("topics_task_ids", []):
+                                return True
+                            for d in data.get("days", []):
+                                if task_id in d.get("task_ids", []):
+                                    return True
+                    except Exception:
+                        pass
+        target_key = f"{exclude_year}-W{exclude_week_num:02d}"
+        for key, w in self.weeks.items():
+            if key != target_key:
+                if task_id in w.week_task_ids or task_id in w.topics_task_ids:
+                    return True
+                for d in w.days:
+                    if task_id in d.task_ids:
+                        return True
+        return False
 
     def rollover_week_to_new_week(
         self,

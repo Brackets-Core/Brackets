@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Tuple, Any
 
 from brackets.models.entities import Task, Note, Idea, WeekSchedule, DaySchedule
 from brackets.managers.entity_manager import EntityManager
+from brackets.worklog.log4brackets import log4brackets
 
 
 class MarkdownSyncService:
@@ -40,6 +41,11 @@ class MarkdownSyncService:
 
         today_str = datetime.now().strftime("%Y-%m-%d")
 
+        # Registrar tareas previas de esta semana para detectar si alguna fue borrada de la bitácora
+        prev_week_task_ids: Set[str] = set(week.week_task_ids)
+        for d in week.days:
+            prev_week_task_ids.update(d.task_ids)
+
         # 1. Parsear Secciones Principales
         sections = self._parse_markdown_sections(content)
 
@@ -60,6 +66,20 @@ class MarkdownSyncService:
         days_meta = sections.get("days_meta", {})
         self._reconcile_all_days(week, days_dict, days_meta, year, week_num, today_str)
 
+        # 6. Eliminar tareas que han sido completamente borradas de la bitácora
+        current_week_task_ids: Set[str] = set(week.week_task_ids)
+        for d in week.days:
+            current_week_task_ids.update(d.task_ids)
+
+        removed_task_ids = prev_week_task_ids - current_week_task_ids
+        for tid in removed_task_ids:
+            task = self.manager.tasks.get(tid)
+            # Solo eliminar si no es recurrente y no está asignada a otra semana
+            if task and not task.is_recurring:
+                if not self.manager.is_task_scheduled_in_other_weeks(tid, year, week_num):
+                    log4brackets.log_task_deleted(tid, task.project_id, task.title)
+                    del self.manager.tasks[tid]
+
         # Guardar cambios en YAML
         self.manager.save_topics()
         self.manager.save_tasks()
@@ -71,28 +91,19 @@ class MarkdownSyncService:
     def _parse_task_status_and_title(raw_text: str, is_checkbox_done: bool) -> Tuple[str, str]:
         """
         Determina el estado ('done', 'cancelled', 'pending') y el título limpio de una tarea.
-        Si la tarea está tachada con ~~...~~, se considera 'cancelled' y se limpian los delimitadores ~~.
+        Si la tarea contiene tachado con ~~...~~, se considera 'cancelled' y se limpian los delimitadores ~~.
         """
         text = raw_text.strip()
 
-        # Caso 1: Todo el texto está envuelto en ~~...~~ (ej: ~~Seguimiento Reporting~~)
-        if text.startswith("~~") and text.endswith("~~") and len(text) >= 4:
-            clean = text[2:-2].strip()
-            return "cancelled", clean
+        # Comprobar si contiene delimitadores de tachado ~~
+        if "~~" in text:
+            # Eliminar todos los delimitadores ~~
+            clean = text.replace("~~", "").strip()
+            # Si dentro de las tildes había un checkbox suelto como "[ ] " o "[x] ", limpiarlo
+            clean = re.sub(r'^\s*\[[ xX]?\]\s*', '', clean).strip()
+            if clean:
+                return "cancelled", clean
 
-        # Caso 2: Tachado con etiqueta de proyecto al final (ej: ~~Seguimiento Reporting~~ [GENERAL])
-        m_proj_suffix = re.match(r'^~~(.+?)~~\s*(\[[A-Za-z0-9_-]+\])$', text)
-        if m_proj_suffix:
-            clean = f"{m_proj_suffix.group(1).strip()} {m_proj_suffix.group(2).strip()}"
-            return "cancelled", clean
-
-        # Caso 3: Tachado con etiqueta de proyecto al inicio (ej: [GENERAL] ~~Seguimiento Reporting~~)
-        m_proj_prefix = re.match(r'^(\[[A-Za-z0-9_-]+\])\s*~~(.+?)~~$', text)
-        if m_proj_prefix:
-            clean = f"{m_proj_prefix.group(1).strip()} {m_proj_prefix.group(2).strip()}"
-            return "cancelled", clean
-
-        # Caso 4: No está tachada en su totalidad
         if is_checkbox_done:
             return "done", text
         return "pending", text
@@ -161,42 +172,55 @@ class MarkdownSyncService:
             if not stripped or stripped.startswith("---"):
                 continue
 
+            # Normalizar líneas con tachado exterior tipo "~~- [ ] Tarea~~" o "~~- Tarea~~"
+            norm_line = line
+            stripped_line = stripped
+            if stripped_line.startswith("~~-") and stripped_line.endswith("~~") and len(stripped_line) >= 5:
+                inner = stripped_line[2:-2].strip()
+                m_inner = re.match(r'^-\s*(?:\[([ xX])\])?\s*(.*)$', inner)
+                if m_inner:
+                    chk = m_inner.group(1) or " "
+                    body = m_inner.group(2)
+                    norm_line = f"- [{chk}] ~~{body}~~"
+                else:
+                    norm_line = f"- ~~{inner[1:].strip()}~~"
+
             if current_section == "topics":
-                m_chk = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', line)
+                m_chk = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', norm_line)
                 if m_chk:
                     t_text = m_chk.group(2).strip()
                     if t_text:
                         status, clean_title = self._parse_task_status_and_title(t_text, m_chk.group(1).lower() == 'x')
                         week_tasks_lines.append((status, clean_title))
                 else:
-                    m_item = re.match(r'^\s*-\s*(.*)$', line)
+                    m_item = re.match(r'^\s*-\s*(.*)$', norm_line)
                     if m_item:
                         t_text = m_item.group(1).strip()
                         if t_text and not t_text.startswith("---"):
                             topics_lines.append(t_text)
             elif current_section == "week_tasks":
-                m = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', line)
+                m = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', norm_line)
                 if m:
                     t_text = m.group(2).strip()
                     if t_text:
                         status, clean_title = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
                         week_tasks_lines.append((status, clean_title))
-                elif line.strip().startswith("- "):
-                    t_text = line.strip()[2:].strip()
+                elif norm_line.strip().startswith("- "):
+                    t_text = norm_line.strip()[2:].strip()
                     if t_text:
                         status, clean_title = self._parse_task_status_and_title(t_text, False)
                         week_tasks_lines.append((status, clean_title))
             elif current_section == "notes":
                 notes_raw_lines.append(line)
             elif current_section == "day" and current_day_num is not None:
-                m = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', line)
+                m = re.match(r'^\s*-\s*\[([ xX])\]\s*(.*)$', norm_line)
                 if m:
                     t_text = m.group(2).strip()
                     if t_text:
                         status, clean_title = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
                         days[current_day_num].append((status, clean_title))
-                elif line.strip().startswith("- "):
-                    t_text = line.strip()[2:].strip()
+                elif norm_line.strip().startswith("- "):
+                    t_text = norm_line.strip()[2:].strip()
                     if t_text:
                         status, clean_title = self._parse_task_status_and_title(t_text, False)
                         days[current_day_num].append((status, clean_title))

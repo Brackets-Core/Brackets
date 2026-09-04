@@ -429,6 +429,36 @@ class TestCoreDailyHubController(unittest.TestCase):
         output_text = "\n".join(self.output_lines)
         self.assertIn("POMODORO TIMER", output_text)
 
+    def test_run_cancel_task_from_hub(self):
+        """Simula pulsar 'x' (cancelar/tachar tarea), seleccionar la tarea '1' y salir con 'q'."""
+        inputs = [
+            "x",   # Cancelar/tachar tarea
+            "1",   # Tarea número 1
+            "",    # Presiona Enter para continuar
+            "q"    # Salir del Hub
+        ]
+
+        def mock_input(prompt=""):
+            return inputs.pop(0)
+
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=mock_input,
+            print_fn=self._mock_print
+        )
+        controller.active_day_number = 24
+        week, active_day = controller._get_active_week_and_day()
+        first_tid = active_day.task_ids[0]
+
+        result = controller.run()
+        self.assertEqual(result, "exit")
+
+        # La primera tarea del día debe estar en estado 'cancelled'
+        task = self.entity_manager.tasks[first_tid]
+        self.assertTrue(task.is_cancelled)
+        self.assertEqual(task.status, "cancelled")
+
 
 if __name__ == "__main__":
     unittest.main()

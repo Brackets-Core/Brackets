@@ -132,6 +132,38 @@ class Log4Brackets:
             project=project_id or "POR_ASIGNAR"
         )
 
+    def log_task_cancelled(
+        self,
+        task_id: str,
+        project_id: Optional[str],
+        title: str,
+        ts: Optional[datetime] = None
+    ) -> str:
+        return self.log(
+            category="TASK",
+            action="cancelled",
+            message=title,
+            ts=ts,
+            id=task_id,
+            project=project_id or "POR_ASIGNAR"
+        )
+
+    def log_task_deleted(
+        self,
+        task_id: str,
+        project_id: Optional[str],
+        title: str,
+        ts: Optional[datetime] = None
+    ) -> str:
+        return self.log(
+            category="TASK",
+            action="deleted",
+            message=title,
+            ts=ts,
+            id=task_id,
+            project=project_id or "POR_ASIGNAR"
+        )
+
     def log_task_backlogged(
         self,
         task_id: str,

@@ -305,5 +305,72 @@ class TestMarkdownSyncService(unittest.TestCase):
         self.assertNotIn("~~", task.title)
 
 
+    def test_sync_week_erase_task_deletes_from_tasks_table(self):
+        """Verifica que borrar la línea de una tarea en la bitácora la elimina de la tabla de tareas si no está en otras semanas."""
+        task_id = self.task_day24.id
+        self.assertIn(task_id, self.manager.tasks)
+
+        with open(self.md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Eliminar la línea de la tarea completamente de la bitácora
+        content_modified = content.replace(f"  - [ ] {self.task_day24.title}\n", "")
+        with open(self.md_path, "w", encoding="utf-8") as f:
+            f.write(content_modified)
+
+        synced = self.sync_service.sync_week_from_markdown(self.md_path, 2026, 35)
+        self.assertTrue(synced)
+
+        # La tarea debe haber sido eliminada de la base de datos de tareas
+        self.assertNotIn(task_id, self.manager.tasks)
+
+        # Y el día ya no debe contener la tarea
+        day24 = next(d for d in self.week.days if d.day_number == 24)
+        self.assertNotIn(task_id, day24.task_ids)
+
+    def test_sync_various_strikethrough_formats(self):
+        """Verifica que diferentes formatos de tachado se reconocen como cancelled sin ser eliminados."""
+        with open(self.md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines_to_add = (
+            "  - [ ] ~~Tarea Con Ticket~~ [🎫TICKET-123]\n"
+            "  - [ ] ~~Tarea Con Comentario~~ (comentada)\n"
+            "  ~~- [ ] Tarea Con Tachado Exterior~~\n"
+            "  - ~~[ ] Tarea Con Checkbox Dentro~~\n"
+        )
+        content_modified = content.replace("## 🚗25", f"## 🚗25\n{lines_to_add}")
+        with open(self.md_path, "w", encoding="utf-8") as f:
+            f.write(content_modified)
+
+        synced = self.sync_service.sync_week_from_markdown(self.md_path, 2026, 35)
+        self.assertTrue(synced)
+
+        day25 = next(d for d in self.week.days if d.day_number == 25)
+        self.assertEqual(len(day25.task_ids), 4)
+
+        for tid in day25.task_ids:
+            task = self.manager.tasks[tid]
+            self.assertTrue(task.is_cancelled, f"Task {task.title} should be cancelled")
+            self.assertNotIn("~~", task.title)
+            self.assertFalse(task.title.startswith("[ ]"))
+
+    def test_cancel_and_toggle_reactivation(self):
+        """Verifica que cancel_task marca como cancelled y toggle_task reactiva a pending."""
+        task = self.manager.create_task("Prueba Cancelar", year=2026, week_num=35, day_number=24)
+        self.assertEqual(task.status, "pending")
+
+        # Cancelar tarea
+        self.manager.cancel_task(task.id)
+        self.assertTrue(task.is_cancelled)
+        self.assertIn(task.id, self.manager.tasks)
+
+        # Reactivar con toggle_task
+        self.manager.toggle_task(task.id)
+        self.assertEqual(task.status, "pending")
+        self.assertFalse(task.is_cancelled)
+
+
 if __name__ == "__main__":
     unittest.main()
+
