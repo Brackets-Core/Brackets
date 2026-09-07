@@ -497,11 +497,16 @@ class MarkdownSyncService:
             for title in done_titles:
                 matched_task = self._find_task_for_day(day, week, title)
                 if not matched_task:
+                    clean_target = title.replace("~~", "").strip()
+                    rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
                     matched_task = self.manager.create_task(
                         title=title,
+                        project_id=rec_info.project_id if rec_info else None,
                         year=year,
                         week_num=week_num,
                         day_number=day_num,
+                        recurring_id=rec_info.id if rec_info else None,
+                        task_type=rec_info.task_type if rec_info else "task",
                         status="done"
                     )
                 else:
@@ -510,6 +515,11 @@ class MarkdownSyncService:
                     matched_task.status = "done"
                     if not matched_task.completed_at:
                         matched_task.completed_at = today_str
+                    if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
+                        rec = self.manager.recurring_tasks[matched_task.recurring_id]
+                        matched_task.task_type = rec.task_type
+                        if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
+                            matched_task.project_id = rec.project_id
 
                 new_day_task_ids[day_num].append(matched_task.id)
 
@@ -521,11 +531,16 @@ class MarkdownSyncService:
             for title in cancelled_titles:
                 matched_task = self._find_task_for_day(day, week, title)
                 if not matched_task:
+                    clean_target = title.replace("~~", "").strip()
+                    rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
                     matched_task = self.manager.create_task(
                         title=title,
+                        project_id=rec_info.project_id if rec_info else None,
                         year=year,
                         week_num=week_num,
                         day_number=day_num,
+                        recurring_id=rec_info.id if rec_info else None,
+                        task_type=rec_info.task_type if rec_info else "task",
                         status="cancelled"
                     )
                 else:
@@ -533,6 +548,11 @@ class MarkdownSyncService:
                         matched_task.title = title
                     matched_task.status = "cancelled"
                     matched_task.completed_at = None
+                    if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
+                        rec = self.manager.recurring_tasks[matched_task.recurring_id]
+                        matched_task.task_type = rec.task_type
+                        if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
+                            matched_task.project_id = rec.project_id
 
                 new_day_task_ids[day_num].append(matched_task.id)
 
@@ -550,11 +570,16 @@ class MarkdownSyncService:
 
             matched_task = self._find_task_for_day(target_day, week, title)
             if not matched_task:
+                clean_target = title.replace("~~", "").strip()
+                rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
                 matched_task = self.manager.create_task(
                     title=title,
+                    project_id=rec_info.project_id if rec_info else None,
                     year=year,
                     week_num=week_num,
                     day_number=latest_day_num,
+                    recurring_id=rec_info.id if rec_info else None,
+                    task_type=rec_info.task_type if rec_info else "task",
                     status="pending"
                 )
             else:
@@ -563,6 +588,11 @@ class MarkdownSyncService:
                 if matched_task.is_done or matched_task.is_cancelled:
                     matched_task.status = "pending"
                     matched_task.completed_at = None
+                if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
+                    rec = self.manager.recurring_tasks[matched_task.recurring_id]
+                    matched_task.task_type = rec.task_type
+                    if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
+                        matched_task.project_id = rec.project_id
 
             new_day_task_ids[latest_day_num].append(matched_task.id)
 

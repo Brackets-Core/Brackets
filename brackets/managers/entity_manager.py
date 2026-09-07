@@ -489,16 +489,23 @@ class EntityManager:
             ]
             existing_rec_tasks.sort(key=lambda x: x.id)
 
-            # Asegurar que todas tengan el recurring_id seteado
+            # Asegurar que todas tengan el recurring_id seteado y hereden atributos canónicos
             for t in existing_rec_tasks:
                 if not t.recurring_id:
                     t.recurring_id = rec.id
+                t.task_type = rec.task_type
+                if rec.project_id and (not t.project_id or t.project_id == "POR_ASIGNAR"):
+                    t.project_id = rec.project_id
 
             if rec.recurrence_type == "weekly_days":
                 # Días específicos (ej: [0, 2, 4] para Lunes, Miércoles, Viernes)
                 for idx, target_wday in enumerate(rec.days_of_week):
                     target_day = weekday_to_day_schedule.get(target_wday)
                     if not target_day:
+                        continue
+
+                    # No agendar tareas ni reuniones recurrentes en días festivos/vacaciones (🏖️)
+                    if target_day.location_emoji == "🏖️":
                         continue
 
                     try:
@@ -556,6 +563,10 @@ class EntityManager:
                     target_day = weekday_to_day_schedule.get(rec.day_of_week)
                     if not target_day:
                         target_day = week.days[-1]
+
+                    # No agendar tareas ni reuniones recurrentes en días festivos/vacaciones (🏖️)
+                    if target_day.location_emoji == "🏖️":
+                        continue
 
                     try:
                         target_date = datetime.fromisocalendar(week.year, week.week_number, rec.day_of_week + 1).strftime("%Y-%m-%d")

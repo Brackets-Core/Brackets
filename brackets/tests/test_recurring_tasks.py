@@ -323,6 +323,26 @@ class TestRecurringTasks(unittest.TestCase):
         # Debe permanecer en el jueves
         self.assertIn(rec_task_id, thursday.task_ids)
 
+    def test_skip_recurring_tasks_on_holiday_or_vacation(self):
+        """Verifica que las tareas y reuniones recurrentes no se programen en días festivos o vacaciones (🏖️)."""
+        rec_daily = self.manager.create_recurring_task(
+            title="Daily S^3",
+            recurrence_type="weekly_days",
+            days_of_week=[0, 2, 4],  # Lunes, Miércoles, Viernes
+            task_type="meeting"
+        )
+        week = self.manager.load_week(2026, 34)
+        # Configurar el viernes como festivo
+        friday = week.days[4]
+        friday.location_emoji = "🏖️"
+        friday.location_note = "Diada"
+
+        injected = self.manager.apply_recurring_tasks(week)
+        # Solo debe inyectarse en Lunes (0) y Miércoles (2), no en Viernes (4)
+        self.assertEqual(injected, 2)
+        fri_tasks = [self.manager.tasks[tid] for tid in friday.task_ids if tid in self.manager.tasks]
+        self.assertFalse(any(t.title == "Daily S^3" for t in fri_tasks))
+
 
 if __name__ == "__main__":
     unittest.main()
