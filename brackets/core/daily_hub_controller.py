@@ -233,6 +233,9 @@ class DailyHubController:
         today_tasks: List[Task] = []
         ordered_task_ids: List[str] = []
 
+        # Asegurar siempre tareas pendientes primero
+        self.manager.sort_day_tasks_pending_first(day)
+
         for tid in day.task_ids:
             task = self.manager.tasks.get(tid)
             if task:
@@ -649,6 +652,8 @@ class DailyHubController:
                 week_num=week.week_number,
                 day_number=day.day_number
             )
+            self.manager.sort_day_tasks_pending_first(day)
+            self.manager.save_week(week)
             self._sync_markdown(week)
 
     def _action_jira_task(self, week: WeekSchedule, day: DaySchedule) -> None:
@@ -666,6 +671,8 @@ class DailyHubController:
                 week_num=week.week_number,
                 day_number=day.day_number
             )
+            self.manager.sort_day_tasks_pending_first(day)
+            self.manager.save_week(week)
             self._sync_markdown(week)
 
     def _action_new_week_task(self, week: WeekSchedule) -> None:
@@ -722,6 +729,8 @@ class DailyHubController:
         if 1 <= target_num <= len(ordered_task_ids):
             target_id = ordered_task_ids[target_num - 1]
             self.manager.toggle_task(target_id)
+            self.manager.sort_day_tasks_pending_first(day)
+            self.manager.save_week(week)
             self._sync_markdown(week)
         else:
             self.print("❌ Número fuera de rango.")
@@ -741,6 +750,8 @@ class DailyHubController:
             if 1 <= num <= len(ordered_task_ids):
                 target_id = ordered_task_ids[num - 1]
                 self.manager.cancel_task(target_id)
+                self.manager.sort_day_tasks_pending_first(day)
+                self.manager.save_week(week)
                 self._sync_markdown(week)
                 self.print("✅ Tarea cancelada (tachada con ~~ en la bitácora y conservada en la base de datos).")
                 self.input("Presiona Enter para continuar...")

@@ -449,6 +449,7 @@ class TestCoreDailyHubController(unittest.TestCase):
         )
         controller.active_day_number = 24
         week, active_day = controller._get_active_week_and_day()
+        self.entity_manager.sort_day_tasks_pending_first(active_day)
         first_tid = active_day.task_ids[0]
 
         result = controller.run()

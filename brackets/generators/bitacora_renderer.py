@@ -42,7 +42,15 @@ class BitacoraRenderer:
         # 3. Sección Week Tasks
         lines.append("## 📋Week Tasks")
         if schedule.week_task_ids:
-            for task_id in schedule.week_task_ids:
+            # Siempre colocar primero las tareas pendientes
+            sorted_week_task_ids = sorted(
+                schedule.week_task_ids,
+                key=lambda tid: (
+                    0 if (manager.tasks.get(tid) and manager.tasks[tid].is_pending)
+                    else (1 if (manager.tasks.get(tid) and manager.tasks[tid].is_done) else 2)
+                )
+            )
+            for task_id in sorted_week_task_ids:
                 task = manager.tasks.get(task_id)
                 if not task:
                     continue
@@ -79,7 +87,15 @@ class BitacoraRenderer:
             lines.append(f"## {day.location_emoji}{day.day_number}{note_suffix}")
             if day.task_ids:
                 seen_titles = set()
-                for task_id in day.task_ids:
+                # Siempre colocar primero las tareas pendientes
+                sorted_day_task_ids = sorted(
+                    day.task_ids,
+                    key=lambda tid: (
+                        0 if (manager.tasks.get(tid) and manager.tasks[tid].is_pending)
+                        else (1 if (manager.tasks.get(tid) and manager.tasks[tid].is_done) else 2)
+                    )
+                )
+                for task_id in sorted_day_task_ids:
                     task = manager.tasks.get(task_id)
                     if not task or task.title in seen_titles:
                         continue

@@ -907,6 +907,41 @@ class EntityManager:
         log4brackets.log_task_cancelled(task.id, task.project_id, task.title)
         return task
 
+    def sort_day_tasks_pending_first(self, day: DaySchedule) -> None:
+        """Ordena los task_ids de un día colocando las tareas pendientes primero, luego completadas y canceladas."""
+        def task_sort_key(tid: str) -> int:
+            t = self.tasks.get(tid)
+            if not t:
+                return 3
+            if t.is_pending:
+                return 0
+            if t.is_done:
+                return 1
+            if t.is_cancelled:
+                return 2
+            return 3
+
+        day.task_ids.sort(key=task_sort_key)
+
+    def sort_week_tasks_pending_first(self, week: WeekSchedule) -> None:
+        """Ordena los task_ids de la semana y de cada día con las tareas pendientes primero."""
+        def task_sort_key(tid: str) -> int:
+            t = self.tasks.get(tid)
+            if not t:
+                return 3
+            if t.is_pending:
+                return 0
+            if t.is_done:
+                return 1
+            if t.is_cancelled:
+                return 2
+            return 3
+
+        week.week_task_ids.sort(key=task_sort_key)
+        week.topics_task_ids = list(week.week_task_ids)
+        for d in week.days:
+            d.task_ids.sort(key=task_sort_key)
+
     def update_task(
         self,
         task_id: str,

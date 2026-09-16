@@ -314,6 +314,44 @@ class TestRelationalBitacoraRenderer(unittest.TestCase):
         self.assertIn("## 🛠️29 (Intervención)", md)
         self.assertIn("- [ ] Soporte y monitoreo de switches en caliente", md)
 
+    def test_always_render_pending_tasks_first(self):
+        """Valida que BitacoraRenderer y EntityManager ordenen siempre las tareas pendientes primero."""
+        week = self.manager.load_week(2026, 35)
+        day = week.days[0]
+
+        # Crear 3 tareas: 1 hecha, 1 cancelada, 1 pendiente
+        t_done = self.manager.create_task(title="Tarea Terminada", status="done", day_number=day.day_number, year=2026, week_num=35)
+        t_canc = self.manager.create_task(title="Tarea Cancelada", status="cancelled", day_number=day.day_number, year=2026, week_num=35)
+        t_pend = self.manager.create_task(title="Tarea Pendiente", status="pending", day_number=day.day_number, year=2026, week_num=35)
+
+        # Forzar un orden desordenado en day.task_ids: [done, canc, pend]
+        day.task_ids = [t_done.id, t_canc.id, t_pend.id]
+
+        # 1. Probar sort_day_tasks_pending_first
+        self.manager.sort_day_tasks_pending_first(day)
+        self.assertEqual(day.task_ids[0], t_pend.id)
+        self.assertEqual(day.task_ids[1], t_done.id)
+        self.assertEqual(day.task_ids[2], t_canc.id)
+
+        # 2. Probar render_week garantiza pendientes primero incluso si day.task_ids estuviera desordenado
+        day.task_ids = [t_done.id, t_canc.id, t_pend.id]
+        md = BitacoraRenderer.render_week(week, self.manager)
+
+        # Extraer líneas de tareas del primer día
+        lines = md.splitlines()
+        day_header = f"## {day.location_emoji}{day.day_number}"
+        day_idx = lines.index(day_header)
+        next_section_idx = len(lines)
+        for i in range(day_idx + 1, len(lines)):
+            if lines[i].startswith("## "):
+                next_section_idx = i
+                break
+
+        day_lines = [l.strip() for l in lines[day_idx + 1:next_section_idx] if l.strip().startswith("- [")]
+        # La tarea pendiente debe ser la primera
+        self.assertIn("Tarea Pendiente", day_lines[0])
+        self.assertTrue(day_lines[0].startswith("- [ ]"))
+
 
 if __name__ == "__main__":
     unittest.main()
