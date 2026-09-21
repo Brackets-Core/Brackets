@@ -66,7 +66,14 @@ class MarkdownSyncService:
         days_meta = sections.get("days_meta", {})
         self._reconcile_all_days(week, days_dict, days_meta, year, week_num, today_str)
 
-        # 6. Eliminar tareas que han sido completamente borradas de la bitácora
+        # 6. Reconciliar Definiciones (<!-- Definiciones -->)
+        definitions_tuples = sections.get("definitions", [])
+        self._reconcile_definitions(week, definitions_tuples)
+
+        # 7. Alta automática de personas mencionadas (@handle)
+        self._auto_register_people(content, today_str)
+
+        # 8. Eliminar tareas que han sido completamente borradas de la bitácora
         current_week_task_ids: Set[str] = set(week.week_task_ids)
         for d in week.days:
             current_week_task_ids.update(d.task_ids)
@@ -84,6 +91,8 @@ class MarkdownSyncService:
         self.manager.save_topics()
         self.manager.save_tasks()
         self.manager.save_notes()
+        self.manager.save_definitions()
+        self.manager.save_people()
         self.manager.save_week(week)
         return True
 
@@ -119,6 +128,7 @@ class MarkdownSyncService:
         notes_raw_lines: List[str] = []
         days: Dict[int, List[Tuple[str, str]]] = {}
         days_meta: Dict[int, Dict[str, Any]] = {}
+        definitions_lines: List[Tuple[str, str]] = []
 
         for line in lines:
             stripped = line.strip()
@@ -170,6 +180,20 @@ class MarkdownSyncService:
                         continue
 
             if not stripped or stripped.startswith("---"):
+                continue
+
+            # Detectar sección de definiciones al pie
+            if "<!--" in stripped and "definicion" in stripped.lower():
+                current_section = "definitions"
+                current_day_num = None
+                continue
+
+            # Detectar formato de definición Markdown [id]: url (en cualquier parte o bajo <!-- Definiciones -->)
+            m_def = re.match(r'^\s*(\[[^\]\n]+\]):\s*(\S.*)$', line)
+            if m_def:
+                d_id = m_def.group(1).strip()
+                d_url = m_def.group(2).strip()
+                definitions_lines.append((d_id, d_url))
                 continue
 
             # Normalizar líneas con tachado exterior tipo "~~- [ ] Tarea~~" o "~~- Tarea~~"
@@ -233,7 +257,8 @@ class MarkdownSyncService:
             "week_tasks": week_tasks_lines,
             "notes_blocks": notes_blocks,
             "days": days,
-            "days_meta": days_meta
+            "days_meta": days_meta,
+            "definitions": definitions_lines
         }
 
     def _parse_notes_blocks(self, raw_lines: List[str]) -> List[Dict[str, Any]]:
@@ -279,6 +304,23 @@ class MarkdownSyncService:
             })
 
         return blocks
+
+    def _reconcile_definitions(self, week: WeekSchedule, definitions_tuples: List[Tuple[str, str]]) -> None:
+        """Reconcilia las definiciones encontradas en el Markdown con manager.definitions."""
+        parsed_def_ids = []
+        for def_id, url in definitions_tuples:
+            def_obj = self.manager.ensure_definition(def_id=def_id, url=url)
+            if def_obj and def_obj.id not in parsed_def_ids:
+                parsed_def_ids.append(def_obj.id)
+
+        if hasattr(week, "definition_ids"):
+            week.definition_ids = parsed_def_ids
+
+    def _auto_register_people(self, content: str, today_str: str) -> None:
+        """Detecta automáticamente menciones @handle en la bitácora y asegura su alta en people.yaml."""
+        mentions = set(re.findall(r'@([A-Za-zÁÉÍÓÚáéíóúñÑ0-9_-]+)', content))
+        for m in sorted(mentions):
+            self.manager.ensure_person(handle=m, created_at=today_str)
 
     def _reconcile_topics(self, week: WeekSchedule, topic_lines: List[str], today_str: str) -> None:
         """Reconcilia la lista de topics generales en YAML."""

@@ -82,6 +82,29 @@ class Definition:
 
 
 @dataclass
+class Person:
+    """Entidad Persona / Contacto referenciado mediante @handle."""
+    id: str  # ej: "PER-0001"
+    handle: str  # ej: "@DidacAlbi"
+    name: str  # ej: "Didac Albi"
+    created_at: str = ""  # "YYYY-MM-DD"
+    status: str = "active"  # "active", "inactive"
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Person:
+        return cls(
+            id=data.get("id", ""),
+            handle=data.get("handle", ""),
+            name=data.get("name", ""),
+            created_at=data.get("created_at", ""),
+            status=data.get("status", "active")
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class Topic:
     """Entidad Topic / Tema general de trabajo enmarcado en un proyecto."""
     id: str  # ej: "TOP-0001"
@@ -282,6 +305,7 @@ class WeekSchedule:
     note_ids: List[str] = field(default_factory=list)
     days: List[DaySchedule] = field(default_factory=list)
     topics_task_ids: List[str] = field(default_factory=list)  # Compatibilidad legacy
+    definition_ids: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> WeekSchedule:
@@ -289,6 +313,7 @@ class WeekSchedule:
         raw_topic_ids = data.get("topic_ids") or data.get("topics_ids") or []
         raw_week_tasks = data.get("week_task_ids") or data.get("weekly_task_ids") or []
         legacy_topics = data.get("topics_task_ids", [])
+        raw_definition_ids = data.get("definition_ids", [])
 
         # Si no había week_task_ids pero sí topics_task_ids legacy, inicializar
         if not raw_week_tasks and legacy_topics:
@@ -303,7 +328,8 @@ class WeekSchedule:
             week_task_ids=list(raw_week_tasks),
             note_ids=data.get("note_ids", []),
             days=days_data,
-            topics_task_ids=list(legacy_topics)
+            topics_task_ids=list(legacy_topics),
+            definition_ids=list(raw_definition_ids)
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -316,5 +342,6 @@ class WeekSchedule:
             "week_task_ids": self.week_task_ids,
             "note_ids": self.note_ids,
             "days": [d.to_dict() for d in self.days],
-            "topics_task_ids": self.week_task_ids
+            "topics_task_ids": self.week_task_ids,
+            "definition_ids": self.definition_ids
         }

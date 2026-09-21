@@ -163,8 +163,6 @@ class DailyHubController:
                 top = self.manager.topics.get(tid)
                 if top:
                     topics.append(top)
-        if not topics:
-            topics = list(self.manager.topics.values())
 
         projects = self.manager.list_projects()
 
@@ -172,11 +170,13 @@ class DailyHubController:
         opt_idx = 1
         topic_map = {}
         if topics:
-            self.print("  Topics disponibles:")
+            self.print("  Topics de la semana:")
             for top in topics:
                 self.print(f"    [{opt_idx}] 🎯 {top.title} ([{top.project_id}])")
                 topic_map[str(opt_idx)] = top
                 opt_idx += 1
+        else:
+            self.print("  (No hay topics definidos para esta semana)")
 
         proj_map = {}
         if projects:
@@ -211,6 +211,10 @@ class DailyHubController:
                         year=week.year if week else None,
                         week_num=week.week_number if week else None
                     )
+                    if week and topic.id not in week.topic_ids:
+                        week.topic_ids.append(topic.id)
+                        self.manager.save_week(week)
+                        self._sync_markdown(week)
                     return topic.project_id, topic.id
             return None, None
 
@@ -297,6 +301,27 @@ class DailyHubController:
                 rendered_notes += 1
         if rendered_notes == 0:
             self.print("  (Sin notas registradas)")
+
+        # 🔗 DEFINICIONES DE LA SEMANA
+        week_defs: List[Definition] = []
+        if hasattr(week, "definition_ids") and week.definition_ids:
+            for did in week.definition_ids:
+                d = self.manager.definitions.get(did)
+                if d and d not in week_defs:
+                    week_defs.append(d)
+        for tid in day.task_ids:
+            t = self.manager.tasks.get(tid)
+            if t:
+                for did in BitacoraRenderer._extract_definition_ids(t.title, self.manager):
+                    d = self.manager.definitions.get(did)
+                    if d and d not in week_defs:
+                        week_defs.append(d)
+        if week_defs:
+            self.print("\n🔗 DEFINICIONES / ENLACES DE LA SEMANA:")
+            for d in week_defs[:6]:
+                self.print(f"  • {d.id} -> {d.url}")
+            if len(week_defs) > 6:
+                self.print(f"  • ... ({len(week_defs) - 6} más en bitácora)")
 
         now = datetime.now()
         is_weekend_missing = now.weekday() in (5, 6) and not any(d.day_number == now.day for d in week.days)
@@ -868,24 +893,24 @@ class DailyHubController:
                     available_topics.append(t)
 
         if not available_topics:
-            self.print("\n⚠️ No hay topics pendientes disponibles para agendar a hoy.")
+            self.print("\n⚠️ No hay tareas semanales o topics pendientes disponibles para agendar a hoy.")
             self.input("Presiona Enter para continuar...")
             return
 
-        self.print(f"\n📋 TOPICS SEMANALES DISPONIBLES PARA AGENDAR AL DÍA {day.day_number}:")
+        self.print(f"\n📋 TAREAS Y TOPICS SEMANALES DISPONIBLES PARA AGENDAR AL DÍA {day.day_number}:")
         for idx, t in enumerate(available_topics, start=1):
             top_tag = f" 🎯[{self.manager.topics[t.topic_id].title}]" if (t.topic_id and t.topic_id in self.manager.topics) else ""
             proj_tag = f" [{t.project_id}]" if t.project_id else ""
             self.print(f"  [{idx}] {t.title}{top_tag}{proj_tag}")
 
-        t_choice = self.input(f"Selecciona topic a agendar a HOY (1-{len(available_topics)}, 0 para cancelar): ").strip()
+        t_choice = self.input(f"Selecciona elemento a agendar a HOY (1-{len(available_topics)}, 0 para cancelar): ").strip()
         try:
             t_idx = int(t_choice)
             if 1 <= t_idx <= len(available_topics):
                 chosen_topic = available_topics[t_idx - 1]
                 self.manager.assign_topic_to_day(week, chosen_topic.id, day.day_number)
                 self._sync_markdown(week)
-                self.print(f"✅ Topic '{chosen_topic.title}' agendado para HOY (Día {day.day_number}).")
+                self.print(f"✅ '{chosen_topic.title}' agendado para HOY (Día {day.day_number}).")
                 self.input("Presiona Enter para continuar...")
         except ValueError:
             pass
@@ -1174,6 +1199,9 @@ class DailyHubController:
         final_url = url_input if url_input else default_url
 
         def_obj = self.manager.ensure_definition(def_id=formatted_id, url=final_url, title=clean_code)
+        if hasattr(week, "definition_ids") and def_obj.id not in week.definition_ids:
+            week.definition_ids.append(def_obj.id)
+            self.manager.save_week(week)
         self._sync_markdown(week)
         self.print(f"\n✅ Definición creada: {def_obj.id}: {def_obj.url}")
         self.input("Presiona Enter para continuar...")
@@ -1192,6 +1220,9 @@ class DailyHubController:
         title = self.input("📝 Título descriptivo (opcional): ").strip() or None
 
         def_obj = self.manager.ensure_definition(def_id=tag, url=url, title=title)
+        if hasattr(week, "definition_ids") and def_obj.id not in week.definition_ids:
+            week.definition_ids.append(def_obj.id)
+            self.manager.save_week(week)
         self._sync_markdown(week)
         self.print(f"\n✅ Definición creada: {def_obj.id}: {def_obj.url}")
         self.input("Presiona Enter para continuar...")

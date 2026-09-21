@@ -35,6 +35,7 @@ class BitacoraRenderer:
                     lines.append(f"  - [{topic.project_id}] {topic.title}")
                 else:
                     lines.append(f"  - {topic.title}")
+                used_def_ids.update(BitacoraRenderer._extract_definition_ids(topic.title, manager))
         else:
             lines.append("  - ")
         lines.append("  ---\n")
@@ -109,7 +110,11 @@ class BitacoraRenderer:
         # 5. Sección Definiciones (al pie)
         # Siempre colocar por defecto la sección de definiciones al pie de la bitácora
         definitions_to_render: List[Definition] = []
-        for def_id in sorted(used_def_ids):
+        all_def_ids = set(used_def_ids)
+        if hasattr(schedule, "definition_ids") and schedule.definition_ids:
+            all_def_ids.update(schedule.definition_ids)
+
+        for def_id in sorted(all_def_ids):
             # Normalizar para buscar en manager
             def_obj = manager.definitions.get(def_id)
             if def_obj:
@@ -136,11 +141,15 @@ class BitacoraRenderer:
 
     @staticmethod
     def _extract_definition_ids(text: str, manager: Optional[EntityManager] = None) -> Set[str]:
-        """Detecta automáticamente IDs de definición tipo [🎫TICKET] o cualquier definición registrada."""
+        """Detecta automáticamente IDs de definición tipo [🎫TICKET], [📂LINK], o cualquier definición registrada."""
         found: Set[str] = set()
-        pattern = r'(\[(?:🎫|🦒|🤖|📺|🎫)[^\]]+\])'
-        matches = re.findall(pattern, text)
-        found.update(matches)
+        candidates = re.findall(r'(\[[^\]\n]+\])', text)
+        for cand in candidates:
+            if manager and cand in manager.definitions:
+                found.add(cand)
+            elif re.search(r'[🎫🦒🤖📺📂📁🔗📊🛠️]', cand):
+                found.add(cand)
+
         if manager:
             for def_id in manager.definitions.keys():
                 if def_id in text:

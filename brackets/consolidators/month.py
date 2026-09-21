@@ -67,19 +67,44 @@ class MonthConsolidator(BaseConsolidator):
         
         return weekly_files, monthly_file, year_file
     
-    def delete_source_files(self, weekly_files: List[str], monthly_file: Optional[str]) -> bool:
+    def delete_source_files(self, weekly_files: List[str], monthly_file: Optional[str], force: bool = False) -> bool:
         """Borra los archivos origen después de confirmar."""
         files_to_delete = weekly_files.copy()
         if monthly_file:
             files_to_delete.append(monthly_file)
-        
-        if self.confirm_deletion(files_to_delete, "archivo"):
+
+        if not files_to_delete:
+            return True
+
+        if force or self.confirm_deletion(files_to_delete, "archivo"):
             self.delete_files_confirmed(files_to_delete)
             return True
         else:
             print("\n↩️  Operación de borrado cancelada")
             return False
-    
+
+    @staticmethod
+    def _extract_and_strip_definitions(content: str) -> Tuple[str, dict]:
+        """Extrae el bloque <!-- Definiciones --> y devuelve el contenido limpio junto a las definiciones."""
+        defs = {}
+        lines = content.split('\n')
+        cleaned_lines = []
+        in_defs = False
+        for line in lines:
+            stripped = line.strip()
+            if "<!--" in stripped and "definicion" in stripped.lower():
+                in_defs = True
+                continue
+            m = re.match(r'^\s*(\[[^\]\n]+\]):\s*(\S.*)$', line)
+            if m:
+                defs[m.group(1).strip()] = m.group(2).strip()
+                continue
+            if in_defs and not stripped:
+                continue
+            in_defs = False
+            cleaned_lines.append(line)
+        return '\n'.join(cleaned_lines), defs
+
     def consolidate(self, year: int, month: int) -> bool:
         """
         Consolida todos los archivos de un mes en un único archivo.
@@ -234,27 +259,38 @@ class MonthConsolidator(BaseConsolidator):
                 pass
 
         # 5. SEMANAS CONSOLIDADAS (en orden inverso, ya están ordenadas)
+        all_month_definitions: dict = {}
         if weekly_files:
             content_parts.append("## 🗓️ Bitácoras Semanales del Mes")
             content_parts.append("")
             for i, weekly_file in enumerate(weekly_files, 1):
                 match = re.search(r'Week(\d{2})', os.path.basename(weekly_file))
                 week_num = match.group(1) if match else "??"
-                
+
                 content_parts.append(f"### 🗓️ Semana {week_num}")
                 content_parts.append("")
-                
+
                 weekly_content = safe_file_read(weekly_file)
                 if weekly_content:
-                    adjusted_content = self.adjust_markdown_headings(weekly_content, skip_first_line=True)
+                    cleaned_weekly_content, defs = self._extract_and_strip_definitions(weekly_content)
+                    all_month_definitions.update(defs)
+
+                    adjusted_content = self.adjust_markdown_headings(cleaned_weekly_content, skip_first_line=True)
                     content_parts.append(adjusted_content.strip())
                     content_parts.append("")
                     content_parts.append("---")
                     content_parts.append("")
-        
+
+        # 6. DEFINICIONES DEL MES (unificadas y deduplicadas al pie)
+        if all_month_definitions:
+            content_parts.append("<!-- Definiciones -->")
+            for def_id, url in sorted(all_month_definitions.items()):
+                content_parts.append(f"{def_id}: {url}")
+            content_parts.append("")
+
         # Escribir archivo consolidado
         final_content = '\n'.join(content_parts)
-        
+
         if safe_file_write(output_path, final_content):
             print(f"\n✅ Archivo consolidado creado: {output_filename}")
             print(f"📍 Ruta: {output_path}")
@@ -265,25 +301,78 @@ class MonthConsolidator(BaseConsolidator):
                 log4brackets.log_consolidation(year, month, output_filename)
             except Exception:
                 pass
-            
-            # Preguntar si borrar archivos origen si es interactivo
+
+            # Eliminar archivos origen: por defecto Sí al consolidar/compactar
             if interactive:
-                delete = input("\n🗑️  ¿Deseas borrar los archivos origen? (s/N): ").strip().lower()
-                if delete in ['s', 'si', 'sí', 'y', 'yes']:
-                    self.delete_source_files(weekly_files, monthly_file)
+                delete = input("\n🗑️  ¿Deseas eliminar las bitácoras semanales consolidadas? (S/n): ").strip().lower()
+                if delete not in ['n', 'no']:
+                    self.delete_source_files(weekly_files, monthly_file, force=True)
             elif delete_source:
-                self.delete_source_files(weekly_files, monthly_file)
-            
+                self.delete_source_files(weekly_files, monthly_file, force=True)
+
             return True
         else:
             print(f"\n❌ Error al crear el archivo consolidado")
             return False
 
-    
+    def get_consolidated_months_with_source_files(self) -> List[Tuple[int, int, List[str]]]:
+        """Encuentra meses que ya tienen su archivo consolidado [YYYY][MM].md pero conservan bitácoras semanales."""
+        result = []
+        for file in os.listdir(self.directory):
+            m = re.match(r'^\[(\d{4})\]\[(\d{2})\]\.md$', file)
+            if m:
+                year = int(m.group(1))
+                month = int(m.group(2))
+                weekly_files, monthly_file, _ = self.get_files_for_month(year, month)
+                files_to_clean = weekly_files.copy()
+                if monthly_file:
+                    files_to_clean.append(monthly_file)
+                if files_to_clean:
+                    result.append((year, month, files_to_clean))
+        result.sort(key=lambda x: (x[0], x[1]))
+        return result
+
+    def cleanup_consolidated_source_files(
+        self,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        interactive: bool = True
+    ) -> int:
+        """
+        Elimina bitácoras semanales correspondientes a meses que ya han sido consolidados.
+        """
+        pending_cleanup = self.get_consolidated_months_with_source_files()
+        if year and month:
+            pending_cleanup = [item for item in pending_cleanup if item[0] == year and item[1] == month]
+
+        if not pending_cleanup:
+            print("✅ No hay bitácoras semanales de meses ya consolidados pendientes de borrar.")
+            return 0
+
+        total_deleted = 0
+        print(f"\n🧹 LIMPIEZA DE BITÁCORAS DE MESES YA CONSOLIDADOS")
+        print("=" * 55)
+        for y, m, flist in pending_cleanup:
+            print(f"  📅 Mes {y}-{m:02d}: {len(flist)} archivo(s) semanal(es)")
+            for f in flist:
+                print(f"     • {os.path.basename(f)}")
+
+        if interactive:
+            resp = input(f"\n⚠️ ¿Deseas eliminar estas bitácoras ya consolidadas? (S/n): ").strip().lower()
+            if resp in ['n', 'no']:
+                print("↩️  Operación cancelada.")
+                return 0
+
+        for _, _, flist in pending_cleanup:
+            total_deleted += self.delete_files_confirmed(flist)
+
+        print(f"\n✅ Se han eliminado {total_deleted} bitácoras semanales ya consolidadas.")
+        return total_deleted
+
     def list_available_months(self) -> List[Tuple[int, int]]:
         """Lista todos los meses disponibles con archivos."""
         months_set = set()
-        
+
         # Buscar todos los archivos de semanas y meses
         for file in os.listdir(self.directory):
             # Buscar patrón [YYYY][MM]
@@ -293,35 +382,46 @@ class MonthConsolidator(BaseConsolidator):
                 month = int(match.group(2))
                 if month > 0:  # Excluir el archivo [00]YearTopics
                     months_set.add((year, month))
-        
+
         # Ordenar por año y mes (descendente)
         return sorted(list(months_set), reverse=True)
-    
+
     def interactive_consolidate(self) -> bool:
         """Modo interactivo para consolidar un mes."""
         print("\n📦 CONSOLIDAR ARCHIVOS DE UN MES")
         print("=" * 40)
-        
+
+        consolidated_with_sources = self.get_consolidated_months_with_source_files()
+        if consolidated_with_sources:
+            print("🧹 Meses previamente consolidados con bitácoras semanales a limpiar:")
+            for y, m, flist in consolidated_with_sources:
+                print(f"  • {y}-{m:02d}: {len(flist)} bitácoras semanales")
+            print("  (Escribe 'c' o 'clean' para limpiar estas bitácoras)")
+            print("-" * 40)
+
         available_months = self.list_available_months()
-        
-        if not available_months:
-            print("❌ No se encontraron archivos de bitácoras")
+
+        if not available_months and not consolidated_with_sources:
+            print("❌ No se encontraron archivos de bitácoras para consolidar")
             return False
-        
-        print("\nMeses disponibles:")
-        print("-" * 30)
-        
-        for i, (year, month) in enumerate(available_months, 1):
-            month_name = MONTH_NAMES.get(month, f'Mes {month:02d}')
-            print(f"{i:2d}. {year}-{month:02d} ({month_name})")
-        
-        print("\nO ingresa manualmente (formato: YYYY-MM)")
-        print("-" * 30)
-        
-        choice = input("\nSelecciona un mes (número o formato YYYY-MM): ").strip()
-        
+
+        if available_months:
+            print("\nMeses pendientes de consolidar:")
+            print("-" * 30)
+
+            for i, (year, month) in enumerate(available_months, 1):
+                month_name = MONTH_NAMES.get(month, f'Mes {month:02d}')
+                print(f"{i:2d}. {year}-{month:02d} ({month_name})")
+
+            print("\nO ingresa manualmente (formato: YYYY-MM)")
+            print("-" * 30)
+
+        choice = input("\nSelecciona opción (número, YYYY-MM o 'c' para limpiar ya consolidados): ").strip().lower()
+        if choice in ('c', 'clean', 'limpiar'):
+            return bool(self.cleanup_consolidated_source_files(interactive=True))
+
         year, month = None, None
-        
+
         # Intentar como número de lista
         try:
             choice_num = int(choice)
@@ -333,7 +433,7 @@ class MonthConsolidator(BaseConsolidator):
             if match:
                 year = int(match.group(1))
                 month = int(match.group(2))
-        
+
         if year and month and 1 <= month <= 12:
             return self.consolidate_month(year, month)
         else:

@@ -270,6 +270,22 @@ class Log4Brackets:
             file=output_file
         )
 
+    def log_person_created(
+        self,
+        person_id: str,
+        handle: str,
+        name: str,
+        ts: Optional[datetime] = None
+    ) -> str:
+        return self.log(
+            category="PERSON",
+            action="created",
+            message=f"{name}",
+            ts=ts,
+            id=person_id,
+            handle=handle
+        )
+
 
 _default_logger: Optional[Log4Brackets] = None
 

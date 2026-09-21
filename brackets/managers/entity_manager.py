@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 import yaml
 
-from brackets.models.entities import Task, Note, Definition, Project, Idea, Topic, RecurringTask, WeekSchedule, DaySchedule
+from brackets.models.entities import Task, Note, Definition, Project, Idea, Topic, RecurringTask, WeekSchedule, DaySchedule, Person
 from brackets.worklog.log4brackets import log4brackets
 
 
@@ -36,6 +36,7 @@ class EntityManager:
         self.notes: Dict[str, Note] = {}
         self.ideas: Dict[str, Idea] = {}
         self.definitions: Dict[str, Definition] = {}
+        self.people: Dict[str, Person] = {}
         self.weeks: Dict[str, WeekSchedule] = {}  # key: "YYYY-WXX"
 
         self.load_all()
@@ -52,6 +53,7 @@ class EntityManager:
         self.load_topics()
         self.load_recurring_tasks()
         self.load_definitions()
+        self.load_people()
         self.load_tasks()
         self.load_notes()
         self.load_ideas()
@@ -134,6 +136,20 @@ class EntityManager:
                 if d.id:
                     self.definitions[d.id] = d
 
+    def load_people(self) -> None:
+        path = self._get_path("people")
+        self.people.clear()
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            items = data.get("people", [])
+            for item in items:
+                p = Person.from_dict(item)
+                if p.handle:
+                    self.people[p.handle] = p
+                elif p.id:
+                    self.people[p.id] = p
+
     def load_tasks(self) -> None:
         path = self._get_path("tasks")
         self.tasks.clear()
@@ -181,6 +197,12 @@ class EntityManager:
     def save_definitions(self) -> None:
         path = self._get_path("definitions")
         data = {"definitions": [d.to_dict() for d in self.definitions.values()]}
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, allow_unicode=True, sort_keys=False)
+
+    def save_people(self) -> None:
+        path = self._get_path("people")
+        data = {"people": [p.to_dict() for p in self.people.values()]}
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, allow_unicode=True, sort_keys=False)
 
@@ -1002,6 +1024,9 @@ class EntityManager:
         """Garantiza que una definición exista en la tabla."""
         if def_id in self.definitions:
             existing = self.definitions[def_id]
+            if url and existing.url != url:
+                existing.url = url
+                self.save_definitions()
             return existing
 
         def_obj = Definition(id=def_id, url=url, title=title)
@@ -1019,6 +1044,68 @@ class EntityManager:
         formatted_id = f"[🎫{clean_code}]"
         full_url = f"{base_url}{clean_code}"
         return self.ensure_definition(def_id=formatted_id, url=full_url, title=clean_code)
+
+    # -------------------------------------------------------------------------
+    # Métodos de Negocio: Personas (@menciones)
+    # -------------------------------------------------------------------------
+    def _split_camel_case_name(self, text: str) -> str:
+        """Convierte DidacAlbi en 'Didac Albi' o IvanMuñoz en 'Ivan Muñoz'."""
+        clean = text.lstrip("@").strip()
+        parts = re.findall(r'[A-ZÁÉÍÓÚÑ][a-záéíóúñ0-9_-]*', clean)
+        if parts and "".join(parts) == clean:
+            return " ".join(parts)
+        return clean
+
+    def _generate_next_person_id(self) -> str:
+        max_num = 0
+        for p in self.people.values():
+            if p.id and p.id.startswith("PER-"):
+                try:
+                    num = int(p.id.split("-")[1])
+                    if num > max_num:
+                        max_num = num
+                except (ValueError, IndexError):
+                    pass
+        return f"PER-{max_num + 1:04d}"
+
+    def ensure_person(
+        self,
+        handle: str,
+        name: Optional[str] = None,
+        created_at: Optional[str] = None
+    ) -> Person:
+        """Garantiza que una persona/contacto (@handle) exista en la tabla de personas."""
+        if not handle:
+            return None
+        formatted_handle = handle if handle.startswith("@") else f"@{handle}"
+
+        if formatted_handle in self.people:
+            existing = self.people[formatted_handle]
+            if name and not existing.name:
+                existing.name = name
+                self.save_people()
+            return existing
+
+        person_id = self._generate_next_person_id()
+        inferred_name = name or self._split_camel_case_name(formatted_handle)
+        date_str = created_at or datetime.now().strftime("%Y-%m-%d")
+
+        person = Person(
+            id=person_id,
+            handle=formatted_handle,
+            name=inferred_name,
+            created_at=date_str,
+            status="active"
+        )
+        self.people[formatted_handle] = person
+        self.save_people()
+
+        try:
+            log4brackets.log_person_created(person.id, person.handle, person.name)
+        except Exception:
+            pass
+
+        return person
 
     # -------------------------------------------------------------------------
     # Métodos de Negocio: Notas
