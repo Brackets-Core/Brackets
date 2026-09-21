@@ -236,6 +236,24 @@ class TestPomodoroTimer:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_status_line_fits_terminal_width(self):
+        name = "ajuste de línea de estado al ancho de la terminal sin salto de línea"
+        try:
+            from brackets.modules.pomodoro_timer import PomodoroConsoleApp
+            app = PomodoroConsoleApp()
+            app.engine.start_focus()
+            app.engine.set_active_task("TSK-1838", "SUPPLY", "Revisar Agente Caja_Abierta [🎫SUPPLY-18914]")
+
+            line = app._render_status_line()
+            width = app._str_display_width(line)
+
+            # Verificar que el ancho de la línea respeta el margen de terminal (máx 79 en terminal de 80)
+            assert width <= 79
+            assert "TSK-1838" in line
+            self._ok(name)
+        except Exception as e:
+            self._fail(name, e)
+
     def run_all(self):
         print("\n🧪 TESTS: modules/pomodoro_timer.py")
         print("=" * 50)
@@ -246,6 +264,7 @@ class TestPomodoroTimer:
         self.test_console_app_select_today_task()
         self.test_console_app_create_new_task()
         self.test_console_app_create_new_task_with_listed_project()
+        self.test_status_line_fits_terminal_width()
         print(f"\n📊 Resultado: ✅ {self.passed} | ❌ {self.failed}")
         return self.failed == 0
 

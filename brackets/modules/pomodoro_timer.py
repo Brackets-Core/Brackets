@@ -13,8 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import os
+import shutil
 import time
 from typing import Callable, Dict, Optional
+import unicodedata
 
 import yaml
 
@@ -511,21 +513,76 @@ class PomodoroConsoleApp:
         bar = "#" * completed + "-" * (width - completed)
         return f"[{bar}] {int(ratio * 100):3d}%"
 
+    @staticmethod
+    def _char_display_width(c: str) -> int:
+        if unicodedata.east_asian_width(c) in ("W", "F"):
+            return 2
+        # Emojis comunes de 2 columnas en terminales modernas
+        if ord(c) in (0x23F1, 0x1F3AF, 0x1F345, 0x2705, 0x274C, 0x2615):
+            return 2
+        return 1
+
+    @classmethod
+    def _str_display_width(cls, s: str) -> int:
+        return sum(cls._char_display_width(c) for c in s)
+
+    @classmethod
+    def _truncate_to_display_width(cls, s: str, max_w: int) -> str:
+        curr = 0
+        res = []
+        for c in s:
+            w = cls._char_display_width(c)
+            if curr + w > max_w:
+                break
+            res.append(c)
+            curr += w
+        return "".join(res)
+
     def _render_status_line(self) -> str:
+        # Base prefix sin la etiqueta de tarea
+        prefix = (
+            f"{self.engine.avatar()} {self.engine.phase_label()} "
+            f"{self._progress_bar()} ⏱ {self.engine.remaining_hhmmss()}"
+        )
+
+        # Detectar columnas disponibles en terminal (fallback a 80 columnas)
+        try:
+            term_cols = shutil.get_terminal_size(fallback=(80, 24)).columns
+        except Exception:
+            term_cols = 80
+
+        # Dejar al menos 1 columna de margen para evitar que Windows CMD/PowerShell salte de línea
+        max_total_w = max(40, term_cols - 1)
+
         task_label = ""
         if self.engine.active_task_title:
-            title = self.engine.active_task_title
-            if len(title) > 28:
-                title = title[:25] + "..."
             tid = f"[{self.engine.active_task_id}] " if self.engine.active_task_id else ""
-            task_label = f" | 🎯 {tid}{title}"
+            prefix_with_tag = f"{prefix} | 🎯 {tid}"
+            avail_w = max_total_w - self._str_display_width(prefix_with_tag)
+            title = self.engine.active_task_title
+
+            if avail_w > 5:
+                if self._str_display_width(title) > avail_w:
+                    truncated = self._truncate_to_display_width(title, max(1, avail_w - 3)) + "..."
+                    task_label = f" | 🎯 {tid}{truncated}"
+                else:
+                    task_label = f" | 🎯 {tid}{title}"
+            else:
+                task_label = f" | 🎯 {tid}"
         elif self.engine.phase == "focus":
             task_label = " | 🎯 Trabajo libre"
 
-        return (
-            f"{self.engine.avatar()} {self.engine.phase_label()} "
-            f"{self._progress_bar()} ⏱ {self.engine.remaining_hhmmss()}{task_label}"
-        )
+        full_line = f"{prefix}{task_label}"
+        # Asegurar recorte estricto por si acaso
+        if self._str_display_width(full_line) > max_total_w:
+            full_line = self._truncate_to_display_width(full_line, max_total_w)
+
+        # Rellenar con espacios hasta max_total_w para sobreescribir completamente cualquier residuo previo
+        current_w = self._str_display_width(full_line)
+        if current_w < max_total_w:
+            full_line += " " * (max_total_w - current_w)
+
+        return full_line
 
     def _notify_phase_end(self, event: str) -> None:
         self.print_fn("\a", end="")
