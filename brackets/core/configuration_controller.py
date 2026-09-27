@@ -50,6 +50,10 @@ class ConfigurationController:
                 self.configure_holidays()
             elif command == "config_vacations":
                 self.configure_vacations()
+            elif command == "config_closures":
+                self.configure_closures()
+            elif command == "config_intensive":
+                self.configure_intensive_workdays()
             elif command == "back":
                 break
             else:
@@ -76,6 +80,25 @@ class ConfigurationController:
                 self.print(f" {i}. {item.get('start')} → {item.get('end')} - {item.get('name', '')}")
         else:
             self.print("\nVacaciones configuradas: ninguna")
+
+        closures = getattr(self.settings, "list_closures", lambda: [])()
+        if closures:
+            self.print("\nCierres de sede central:")
+            for i, item in enumerate(closures, 1):
+                self.print(f" {i}. {item.get('date')} - {item.get('name', '')}")
+        else:
+            self.print("\nCierres de sede central: ninguno")
+
+        intensives = getattr(self.settings, "list_intensive_days", lambda: [])()
+        if intensives:
+            self.print("\nJornada intensiva configurada:")
+            for i, item in enumerate(intensives, 1):
+                if item.get("date"):
+                    self.print(f" {i}. {item.get('date')} - {item.get('name', '')}")
+                else:
+                    self.print(f" {i}. {item.get('start')} → {item.get('end')} - {item.get('name', '')}")
+        else:
+            self.print("\nJornada intensiva configurada: ninguna")
 
     def configure_work_pattern(self) -> None:
         day_map = {
@@ -228,6 +251,81 @@ class ConfigurationController:
                     idx = int(index) - 1
                     self.settings.delete_vacation(idx)
                     self.print("✅ Vacaciones eliminadas")
+                except ValueError:
+                    self.print("❌ Índice inválido")
+            else:
+                self.print("❌ Opción inválida")
+
+    def configure_closures(self) -> None:
+        while True:
+            closures = getattr(self.settings, "list_closures", lambda: [])()
+            self.clear_screen()
+            self.print(f"\n🏢 CIERRES DE SEDE CENTRAL - {self.vault_name}")
+            self.print("-" * 50)
+            if closures:
+                for i, item in enumerate(closures, 1):
+                    self.print(f" {i}. {item.get('date')} - {item.get('name', '')}")
+            else:
+                self.print(" No hay cierres de sede configurados")
+
+            choice = self.input("(A)ñadir/actualizar, (D)elete, 0 volver: ").strip().lower()
+            if choice == "0":
+                break
+            if choice == "a":
+                date_str = self.input("Fecha (YYYY-MM-DD): ").strip()
+                name = self.input("Nombre: ").strip() or "Cierre de sede central"
+                try:
+                    self.settings.add_or_update_closure(date_str, name)
+                    self.print("✅ Cierre de sede guardado")
+                except Exception as e:
+                    self.print(f"❌ {e}")
+            elif choice == "d":
+                index = self.input("Número a eliminar: ").strip()
+                try:
+                    idx = int(index) - 1
+                    self.settings.delete_closure(idx)
+                    self.print("✅ Cierre eliminado")
+                except ValueError:
+                    self.print("❌ Índice inválido")
+            else:
+                self.print("❌ Opción inválida")
+
+    def configure_intensive_workdays(self) -> None:
+        while True:
+            intensives = getattr(self.settings, "list_intensive_days", lambda: [])()
+            self.clear_screen()
+            self.print(f"\n⚡ JORNADA INTENSIVA - {self.vault_name}")
+            self.print("-" * 50)
+            if intensives:
+                for i, item in enumerate(intensives, 1):
+                    if item.get("date"):
+                        self.print(f" {i}. {item.get('date')} - {item.get('name', '')}")
+                    else:
+                        self.print(f" {i}. {item.get('start')} → {item.get('end')} - {item.get('name', '')}")
+            else:
+                self.print(" No hay jornadas intensivas configuradas")
+
+            choice = self.input("(A)ñadir día o rango, (D)elete, 0 volver: ").strip().lower()
+            if choice == "0":
+                break
+            if choice == "a":
+                start_or_date = self.input("Fecha o Inicio (YYYY-MM-DD): ").strip()
+                is_range = self.input("¿Es un rango de fechas? [s/N]: ").strip().lower() in ("s", "si", "y", "yes")
+                end_str = None
+                if is_range:
+                    end_str = self.input("Fin (YYYY-MM-DD): ").strip()
+                name = self.input("Nombre (Enter para 'Jornada Intensiva'): ").strip() or "Jornada Intensiva"
+                try:
+                    self.settings.add_or_update_intensive_day(start_or_date, end_str, name)
+                    self.print("✅ Jornada intensiva guardada")
+                except Exception as e:
+                    self.print(f"❌ {e}")
+            elif choice == "d":
+                index = self.input("Número a eliminar: ").strip()
+                try:
+                    idx = int(index) - 1
+                    self.settings.delete_intensive_day(idx)
+                    self.print("✅ Entrada eliminada")
                 except ValueError:
                     self.print("❌ Índice inválido")
             else:

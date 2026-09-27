@@ -207,6 +207,16 @@ class Task:
     def is_meeting(self) -> bool:
         return self.task_type == "meeting"
 
+    @property
+    def premoji(self) -> str:
+        from brackets.models.task_types import TaskTypeRegistry
+        return TaskTypeRegistry.get_premoji(self.task_type)
+
+    @property
+    def formatted_title(self) -> str:
+        from brackets.models.task_types import TaskTypeRegistry
+        return TaskTypeRegistry.format_title_with_premoji(self.title, self.task_type)
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Task:
         return cls(

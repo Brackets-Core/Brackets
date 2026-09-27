@@ -270,6 +270,16 @@ menus:
         keys: ["4", "a"]
         action: exec
         command: config_vacations
+      - id: closures
+        label: "Gestionar cierres de sede"
+        keys: ["5", "c"]
+        action: exec
+        command: config_closures
+      - id: intensive
+        label: "Gestionar jornada intensiva"
+        keys: ["6", "i"]
+        action: exec
+        command: config_intensive
       - id: back
         label: "Volver al menu principal"
         keys: ["0", "b"]

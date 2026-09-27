@@ -49,6 +49,11 @@ class EntityManager:
 
     def load_all(self) -> None:
         """Carga todas las tablas de entidades desde el disco."""
+        # Cargar tipos de tareas configurados en el vault (YAML antes que código)
+        from brackets.models.task_types import TaskTypeRegistry
+        task_types_file = os.path.join(self.base_data_dir, "task_types.yaml")
+        TaskTypeRegistry.load_from_yaml(task_types_file)
+
         self.load_projects()
         self.load_topics()
         self.load_recurring_tasks()
@@ -473,6 +478,41 @@ class EntityManager:
             return True
         return False
 
+    def apply_calendar_to_week(self, week: WeekSchedule, settings: Optional[Any] = None) -> bool:
+        """
+        Sincroniza las ubicaciones, festivos, vacaciones y cierres configurados en work_calendar.yaml
+        con los días de la semana indicada. Devuelve True si hubo cambios.
+        """
+        if not settings or not hasattr(settings, "get_location_for_date") or not week.days:
+            return False
+
+        changed = False
+        for day in week.days:
+            dt = None
+            for iso_wday in range(1, 8):
+                try:
+                    candidate = datetime.fromisocalendar(week.year, week.week_number, iso_wday)
+                    if candidate.day == day.day_number:
+                        dt = candidate
+                        break
+                except Exception:
+                    pass
+            if not dt:
+                try:
+                    dt = datetime(week.year, week.month, day.day_number)
+                except Exception:
+                    continue
+
+            loc_emoji, loc_note = settings.get_location_for_date(dt, week.week_number)
+            # Si el calendario marca festivo/vacaciones/cierre (off / 🏖️) o jornada intensiva:
+            if loc_emoji == "🏖️" or loc_note is not None:
+                if day.location_emoji != loc_emoji or day.location_note != loc_note:
+                    day.location_emoji = loc_emoji
+                    day.location_note = loc_note
+                    changed = True
+
+        return changed
+
     def apply_recurring_tasks(self, week: WeekSchedule) -> int:
         """
         Evalúa e inyecta las tareas/reuniones recurrentes activas en la semana indicada.
@@ -528,6 +568,12 @@ class EntityManager:
 
                     # No agendar tareas ni reuniones recurrentes en días festivos/vacaciones (🏖️)
                     if target_day.location_emoji == "🏖️":
+                        to_remove = [
+                            tid for tid in target_day.task_ids
+                            if self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title)
+                        ]
+                        for tid in to_remove:
+                            target_day.task_ids.remove(tid)
                         continue
 
                     try:
@@ -588,6 +634,12 @@ class EntityManager:
 
                     # No agendar tareas ni reuniones recurrentes en días festivos/vacaciones (🏖️)
                     if target_day.location_emoji == "🏖️":
+                        to_remove = [
+                            tid for tid in target_day.task_ids
+                            if self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title)
+                        ]
+                        for tid in to_remove:
+                            target_day.task_ids.remove(tid)
                         continue
 
                     try:

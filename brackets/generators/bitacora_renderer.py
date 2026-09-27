@@ -128,16 +128,19 @@ class BitacoraRenderer:
 
     @staticmethod
     def _format_task_line(task: Task) -> str:
-        """Formatea la línea de tarea según su estado."""
+        """Formatea la línea de tarea según su estado e incluye premoji si corresponde."""
+        from brackets.models.task_types import TaskTypeRegistry
+
+        formatted_title = TaskTypeRegistry.format_title_with_premoji(task.title, task.task_type)
         if task.is_done:
-            return f"  - [x] {task.title}"
+            return f"  - [x] {formatted_title}"
         elif task.is_cancelled:
             # Si no tiene ya tildes en el título, envolver
-            if "~~" not in task.title:
-                return f"  - [ ] ~~{task.title}~~"
-            return f"  - [ ] {task.title}"
+            if "~~" not in formatted_title:
+                return f"  - [ ] ~~{formatted_title}~~"
+            return f"  - [ ] {formatted_title}"
         else:
-            return f"  - [ ] {task.title}"
+            return f"  - [ ] {formatted_title}"
 
     @staticmethod
     def _extract_definition_ids(text: str, manager: Optional[EntityManager] = None) -> Set[str]:

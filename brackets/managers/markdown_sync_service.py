@@ -97,25 +97,30 @@ class MarkdownSyncService:
         return True
 
     @staticmethod
-    def _parse_task_status_and_title(raw_text: str, is_checkbox_done: bool) -> Tuple[str, str]:
+    def _parse_task_status_and_title(raw_text: str, is_checkbox_done: bool) -> Tuple[str, str, str]:
         """
-        Determina el estado ('done', 'cancelled', 'pending') y el título limpio de una tarea.
-        Si la tarea contiene tachado con ~~...~~, se considera 'cancelled' y se limpian los delimitadores ~~.
+        Determina el estado ('done', 'cancelled', 'pending'), el título limpio y el tipo de tarea
+        utilizando TaskTypeRegistry para detectar premojis o prefijos textuales como 'Reunión:'.
         """
+        from brackets.models.task_types import TaskTypeRegistry
+
         text = raw_text.strip()
+        status = "pending"
 
         # Comprobar si contiene delimitadores de tachado ~~
         if "~~" in text:
-            # Eliminar todos los delimitadores ~~
             clean = text.replace("~~", "").strip()
-            # Si dentro de las tildes había un checkbox suelto como "[ ] " o "[x] ", limpiarlo
             clean = re.sub(r'^\s*\[[ xX]?\]\s*', '', clean).strip()
             if clean:
-                return "cancelled", clean
+                status = "cancelled"
+                text = clean
+        elif is_checkbox_done:
+            status = "done"
 
-        if is_checkbox_done:
-            return "done", text
-        return "pending", text
+        # Detectar tipo de tarea y limpiar premojis o prefijos
+        task_type, clean_title = TaskTypeRegistry.detect_task_type_and_clean_title(text)
+
+        return status, clean_title, task_type
 
     def _parse_markdown_sections(self, content: str) -> Dict[str, Any]:
         """Trocea el documento Markdown en sus secciones semánticas."""
@@ -214,8 +219,8 @@ class MarkdownSyncService:
                 if m_chk:
                     t_text = m_chk.group(2).strip()
                     if t_text:
-                        status, clean_title = self._parse_task_status_and_title(t_text, m_chk.group(1).lower() == 'x')
-                        week_tasks_lines.append((status, clean_title))
+                        status, clean_title, task_type = self._parse_task_status_and_title(t_text, m_chk.group(1).lower() == 'x')
+                        week_tasks_lines.append((status, clean_title, task_type))
                 else:
                     m_item = re.match(r'^\s*-\s*(.*)$', norm_line)
                     if m_item:
@@ -227,13 +232,13 @@ class MarkdownSyncService:
                 if m:
                     t_text = m.group(2).strip()
                     if t_text:
-                        status, clean_title = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
-                        week_tasks_lines.append((status, clean_title))
+                        status, clean_title, task_type = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
+                        week_tasks_lines.append((status, clean_title, task_type))
                 elif norm_line.strip().startswith("- "):
                     t_text = norm_line.strip()[2:].strip()
                     if t_text:
-                        status, clean_title = self._parse_task_status_and_title(t_text, False)
-                        week_tasks_lines.append((status, clean_title))
+                        status, clean_title, task_type = self._parse_task_status_and_title(t_text, False)
+                        week_tasks_lines.append((status, clean_title, task_type))
             elif current_section == "notes":
                 notes_raw_lines.append(line)
             elif current_section == "day" and current_day_num is not None:
@@ -241,13 +246,13 @@ class MarkdownSyncService:
                 if m:
                     t_text = m.group(2).strip()
                     if t_text:
-                        status, clean_title = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
-                        days[current_day_num].append((status, clean_title))
+                        status, clean_title, task_type = self._parse_task_status_and_title(t_text, m.group(1).lower() == 'x')
+                        days[current_day_num].append((status, clean_title, task_type))
                 elif norm_line.strip().startswith("- "):
                     t_text = norm_line.strip()[2:].strip()
                     if t_text:
-                        status, clean_title = self._parse_task_status_and_title(t_text, False)
-                        days[current_day_num].append((status, clean_title))
+                        status, clean_title, task_type = self._parse_task_status_and_title(t_text, False)
+                        days[current_day_num].append((status, clean_title, task_type))
 
         # Parsear bloques de notas a partir de notes_raw_lines
         notes_blocks = self._parse_notes_blocks(notes_raw_lines)
@@ -360,12 +365,32 @@ class MarkdownSyncService:
         current_tasks = [self.manager.tasks[tid] for tid in week.week_task_ids if tid in self.manager.tasks]
         new_week_task_ids: List[str] = []
 
-        for status, title in task_tuples:
-            matched_task = next((t for t in current_tasks if t.title == title), None)
-            if not matched_task:
-                matched_task = next((t for t in current_tasks if t.title.replace("~~", "").strip() == title), None)
+        from brackets.models.task_types import TaskTypeRegistry
+
+        for item in task_tuples:
+            if len(item) == 3:
+                status, title, task_type = item
+            else:
+                status, title = item
+                task_type = "task"
+
+            matched_task = None
+            for t in current_tasks:
+                if t.title == title or t.title.replace("~~", "").strip() == title:
+                    matched_task = t
+                    break
+                _, clean_t = TaskTypeRegistry.detect_task_type_and_clean_title(t.title.replace("~~", "").strip())
+                if clean_t == title:
+                    matched_task = t
+                    break
 
             if matched_task:
+                if matched_task.title != title and TaskTypeRegistry.detect_task_type_and_clean_title(matched_task.title)[1] == title:
+                    matched_task.title = title
+
+                if task_type != "task":
+                    matched_task.task_type = task_type
+
                 if "~~" in matched_task.title:
                     matched_task.title = title
 
@@ -394,6 +419,7 @@ class MarkdownSyncService:
                     is_week_task=True,
                     year=week.year,
                     week_num=week.week_number,
+                    task_type=task_type,
                     status=status
                 )
                 if status == "done":
@@ -445,13 +471,25 @@ class MarkdownSyncService:
         2. Tareas en otros días de esta misma semana o en week_task_ids.
         3. Tareas pendientes/canceladas globales no resueltas (sin recurring_id).
         Evita reutilizar tareas recurrentes o completadas de semanas/meses anteriores.
+        Soporta emparejamiento con y sin premojis / prefijos de reunión.
         """
+        from brackets.models.task_types import TaskTypeRegistry
+
         clean_target = title.replace("~~", "").strip()
+        _, clean_norm_target = TaskTypeRegistry.detect_task_type_and_clean_title(clean_target)
+
+        def _is_match(t: Optional[Task]) -> bool:
+            if not t:
+                return False
+            if t.title == title or t.title.replace("~~", "").strip() == clean_target:
+                return True
+            _, clean_t = TaskTypeRegistry.detect_task_type_and_clean_title(t.title.replace("~~", "").strip())
+            return clean_t == clean_norm_target
 
         # 1. En este día
         for tid in day.task_ids:
             t = self.manager.tasks.get(tid)
-            if t and (t.title == title or t.title.replace("~~", "").strip() == clean_target):
+            if _is_match(t):
                 return t
 
         # 2. En otros días de esta semana
@@ -459,17 +497,17 @@ class MarkdownSyncService:
             if other_day.day_number != day.day_number:
                 for tid in other_day.task_ids:
                     t = self.manager.tasks.get(tid)
-                    if t and (t.title == title or t.title.replace("~~", "").strip() == clean_target):
+                    if _is_match(t):
                         return t
 
         # 3. En tareas de la semana
         for tid in week.week_task_ids:
             t = self.manager.tasks.get(tid)
-            if t and (t.title == title or t.title.replace("~~", "").strip() == clean_target):
+            if _is_match(t):
                 return t
 
         # 4. Comprobar si coincide con una tarea recurrente activa
-        matching_rec = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+        matching_rec = next((r for r in self.manager.list_recurring_tasks() if _is_match(Task(id="", title=r.title))), None)
         if matching_rec:
             # Buscar una tarea existente asociada a esta recurrencia
             rec_task = next((t for t in self.manager.tasks.values() if t.recurring_id == matching_rec.id), None)
@@ -479,7 +517,7 @@ class MarkdownSyncService:
 
         # 5. Tarea pendiente o cancelada global no asignada a otra semana
         for t in self.manager.tasks.values():
-            if (t.title == title or t.title.replace("~~", "").strip() == clean_target) and (t.is_pending or t.is_cancelled):
+            if _is_match(t) and (t.is_pending or t.is_cancelled):
                 return t
 
         return None
@@ -487,7 +525,7 @@ class MarkdownSyncService:
     def _reconcile_all_days(
         self,
         week: WeekSchedule,
-        days_dict: Dict[int, List[Tuple[str, str]]],
+        days_dict: Dict[int, List[Any]],
         days_meta: Dict[int, Dict[str, Optional[str]]],
         year: int,
         week_num: int,
@@ -498,9 +536,11 @@ class MarkdownSyncService:
         evitando duplicidades entre días para una misma tarea arrastrada.
         Siempre coloca primero las tareas pendientes, luego completadas y canceladas.
         """
+        from brackets.models.task_types import TaskTypeRegistry
+
         day_by_number: Dict[int, DaySchedule] = {d.day_number: d for d in week.days}
 
-        # Asegurar días que existan en el markdown pero no en week.days
+        # Asegurar días y actualizar metadatos (emoji y nota) desde el Markdown
         for day_num, meta in days_meta.items():
             if day_num not in day_by_number:
                 new_day = DaySchedule(
@@ -510,19 +550,32 @@ class MarkdownSyncService:
                 )
                 week.days.append(new_day)
                 day_by_number[day_num] = new_day
+            else:
+                existing_day = day_by_number[day_num]
+                if meta.get("emoji"):
+                    existing_day.location_emoji = meta["emoji"]
+                existing_day.location_note = meta.get("note")
 
         ordered_day_numbers = [d.day_number for d in week.days]
 
         pending_task_latest_day: Dict[str, int] = {}
+        task_types_by_title: Dict[str, str] = {}
         done_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
         cancelled_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
 
         for day_num in ordered_day_numbers:
             tuples = days_dict.get(day_num, [])
-            for status, title in tuples:
+            for item in tuples:
+                if len(item) == 3:
+                    status, title, t_type = item
+                else:
+                    status, title = item
+                    t_type = "task"
                 clean_title = title.strip()
                 if not clean_title:
                     continue
+                if t_type and t_type != "task":
+                    task_types_by_title[clean_title] = t_type
                 if status == "done":
                     done_tasks_by_day.setdefault(day_num, []).append(clean_title)
                 elif status == "cancelled":
@@ -545,10 +598,13 @@ class MarkdownSyncService:
             if not target_day:
                 continue
 
+            detected_type = task_types_by_title.get(title, "task")
             matched_task = self._find_task_for_day(target_day, week, title)
             if not matched_task:
                 clean_target = title.replace("~~", "").strip()
                 rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+                rec_type = rec_info.task_type if rec_info else None
+                final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
                 matched_task = self.manager.create_task(
                     title=title,
                     project_id=rec_info.project_id if rec_info else None,
@@ -556,18 +612,23 @@ class MarkdownSyncService:
                     week_num=week_num,
                     day_number=latest_day_num,
                     recurring_id=rec_info.id if rec_info else None,
-                    task_type=rec_info.task_type if rec_info else "task",
+                    task_type=final_task_type,
                     status="pending"
                 )
             else:
                 if "~~" in matched_task.title:
                     matched_task.title = title
+                if matched_task.title != title and TaskTypeRegistry.detect_task_type_and_clean_title(matched_task.title)[1] == title:
+                    matched_task.title = title
+                if detected_type != "task":
+                    matched_task.task_type = detected_type
                 if matched_task.is_done or matched_task.is_cancelled:
                     matched_task.status = "pending"
                     matched_task.completed_at = None
                 if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
                     rec = self.manager.recurring_tasks[matched_task.recurring_id]
-                    matched_task.task_type = rec.task_type
+                    if rec.task_type != "task" and detected_type == "task":
+                        matched_task.task_type = rec.task_type
                     if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
                         matched_task.project_id = rec.project_id
 
@@ -579,10 +640,13 @@ class MarkdownSyncService:
             if not day:
                 continue
             for title in done_titles:
+                detected_type = task_types_by_title.get(title, "task")
                 matched_task = self._find_task_for_day(day, week, title)
                 if not matched_task:
                     clean_target = title.replace("~~", "").strip()
                     rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+                    rec_type = rec_info.task_type if rec_info else None
+                    final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
                     matched_task = self.manager.create_task(
                         title=title,
                         project_id=rec_info.project_id if rec_info else None,
@@ -590,18 +654,23 @@ class MarkdownSyncService:
                         week_num=week_num,
                         day_number=day_num,
                         recurring_id=rec_info.id if rec_info else None,
-                        task_type=rec_info.task_type if rec_info else "task",
+                        task_type=final_task_type,
                         status="done"
                     )
                 else:
                     if "~~" in matched_task.title:
                         matched_task.title = title
+                    if matched_task.title != title and TaskTypeRegistry.detect_task_type_and_clean_title(matched_task.title)[1] == title:
+                        matched_task.title = title
+                    if detected_type != "task":
+                        matched_task.task_type = detected_type
                     matched_task.status = "done"
                     if not matched_task.completed_at:
                         matched_task.completed_at = today_str
                     if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
                         rec = self.manager.recurring_tasks[matched_task.recurring_id]
-                        matched_task.task_type = rec.task_type
+                        if rec.task_type != "task" and detected_type == "task":
+                            matched_task.task_type = rec.task_type
                         if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
                             matched_task.project_id = rec.project_id
 
@@ -613,10 +682,13 @@ class MarkdownSyncService:
             if not day:
                 continue
             for title in cancelled_titles:
+                detected_type = task_types_by_title.get(title, "task")
                 matched_task = self._find_task_for_day(day, week, title)
                 if not matched_task:
                     clean_target = title.replace("~~", "").strip()
                     rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+                    rec_type = rec_info.task_type if rec_info else None
+                    final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
                     matched_task = self.manager.create_task(
                         title=title,
                         project_id=rec_info.project_id if rec_info else None,
@@ -624,17 +696,22 @@ class MarkdownSyncService:
                         week_num=week_num,
                         day_number=day_num,
                         recurring_id=rec_info.id if rec_info else None,
-                        task_type=rec_info.task_type if rec_info else "task",
+                        task_type=final_task_type,
                         status="cancelled"
                     )
                 else:
                     if "~~" in matched_task.title:
                         matched_task.title = title
+                    if matched_task.title != title and TaskTypeRegistry.detect_task_type_and_clean_title(matched_task.title)[1] == title:
+                        matched_task.title = title
+                    if detected_type != "task":
+                        matched_task.task_type = detected_type
                     matched_task.status = "cancelled"
                     matched_task.completed_at = None
                     if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
                         rec = self.manager.recurring_tasks[matched_task.recurring_id]
-                        matched_task.task_type = rec.task_type
+                        if rec.task_type != "task" and detected_type == "task":
+                            matched_task.task_type = rec.task_type
                         if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
                             matched_task.project_id = rec.project_id
 

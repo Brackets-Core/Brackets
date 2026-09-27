@@ -59,6 +59,9 @@ class DailyHubController:
             else:
                 self.manager = EntityManager(self.data_dir)
 
+        from brackets.managers.settings_manager import get_global_settings_manager
+        self.settings = get_global_settings_manager(self.vault_root)
+
     def _get_active_week_and_day(self) -> Tuple[Optional[WeekSchedule], Optional[DaySchedule]]:
         """Determina la semana y el día activo para la jornada actual."""
         now = datetime.now()
@@ -270,7 +273,7 @@ class DailyHubController:
                 status_box = "[x]" if task.is_done else ("[ ] ~~" if task.is_cancelled else "[ ]")
                 suffix = "~~" if task.is_cancelled else ""
                 proj_tag = f" [{task.project_id}]" if task.project_id else ""
-                type_icon = "🤝 " if task.is_meeting else ""
+                type_icon = f"{task.premoji} " if task.premoji else ""
                 self.print(f"  [{idx}] {status_box} {type_icon}{task.title}{proj_tag}{suffix}")
         else:
             self.print("  (No hay tareas asignadas para este día)")
@@ -283,7 +286,8 @@ class DailyHubController:
             self.print("\n📋 TAREAS DE LA SEMANA (SIN DÍA FIJO):")
             for t in week_pending:
                 proj_tag = f" [{t.project_id}]" if t.project_id else ""
-                self.print(f"  ⏳ {t.title}{proj_tag}")
+                type_icon = f"{t.premoji} " if t.premoji else ""
+                self.print(f"  ⏳ {type_icon}{t.title}{proj_tag}")
 
         self.print("\n📝 NOTAS DE LA SEMANA:")
         rendered_notes = 0
@@ -349,7 +353,11 @@ class DailyHubController:
         )
         if os.path.exists(md_path):
             service = MarkdownSyncService(self.manager, self.vault_root)
-            if service.sync_week_from_markdown(md_path, week.year, week.week_number):
+            synced = service.sync_week_from_markdown(md_path, week.year, week.week_number)
+            if self.manager.apply_calendar_to_week(week, getattr(self, "settings", None)):
+                self.manager.save_week(week)
+                synced = True
+            if synced:
                 self._sync_markdown(week)
 
     def _action_sync_markdown_to_yaml(self, week: WeekSchedule) -> None:
@@ -373,6 +381,9 @@ class DailyHubController:
         service = MarkdownSyncService(self.manager, self.vault_root)
         try:
             synced = service.sync_week_from_markdown(md_path, week.year, week.week_number)
+            if self.manager.apply_calendar_to_week(week, getattr(self, "settings", None)):
+                self.manager.save_week(week)
+                synced = True
             reloaded_week = self.manager.load_week(week.year, week.week_number, reload=True)
             if reloaded_week:
                 self._sync_markdown(reloaded_week)
@@ -416,6 +427,9 @@ class DailyHubController:
             # Sincronización automática de cambios manuales en Markdown al abrir el hub
             if first_iteration:
                 self._sync_from_markdown_if_exists(week)
+                if self.manager.apply_calendar_to_week(week, getattr(self, "settings", None)):
+                    self.manager.save_week(week)
+                    self._sync_markdown(week)
                 if self.manager.apply_recurring_tasks(week) > 0:
                     self._sync_markdown(week)
                 first_iteration = False
@@ -668,9 +682,12 @@ class DailyHubController:
     def _action_new_task(self, week: WeekSchedule, day: DaySchedule) -> None:
         text = self.input("📝 Texto de la nueva tarea: ").strip()
         if text:
+            from brackets.models.task_types import TaskTypeRegistry
+            task_type, clean_title = TaskTypeRegistry.detect_task_type_and_clean_title(text)
             proj_id, topic_id = self.prompt_topic_or_project_selection(week)
             self.manager.create_task(
-                title=text,
+                title=clean_title,
+                task_type=task_type,
                 project_id=proj_id,
                 topic_id=topic_id,
                 year=week.year,
@@ -703,9 +720,12 @@ class DailyHubController:
     def _action_new_week_task(self, week: WeekSchedule) -> None:
         text = self.input("📝 Texto de la tarea semanal (sin día fijo): ").strip()
         if text:
+            from brackets.models.task_types import TaskTypeRegistry
+            task_type, clean_title = TaskTypeRegistry.detect_task_type_and_clean_title(text)
             proj_id, topic_id = self.prompt_topic_or_project_selection(week)
             self.manager.create_task(
-                title=text,
+                title=clean_title,
+                task_type=task_type,
                 project_id=proj_id,
                 topic_id=topic_id,
                 is_week_task=True,

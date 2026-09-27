@@ -1,0 +1,67 @@
+# =============================================================================
+# Tipos de Tareas y Premojis de Brackets
+# =============================================================================
+# Configuración modular de tipos de tareas sin tocar código Python.
+#
+# Campos disponibles por cada tipo:
+#   key: Identificador único en base de datos (tasks.yaml). Ej: meeting, bug, spike
+#   label: Nombre descriptivo legible (para menús y reportes). Ej: Reunión
+#   premoji: Emoji oficial que se antepondrá en el archivo .md y en el Daily Hub
+#   text_prefixes: Prefijos textuales que al escribirse a mano en el .md se detectan
+#                  automáticamente y se convierten en este tipo y premoji
+#   emoji_aliases: Lista de emojis equivalentes que también se reconocerán
+# =============================================================================
+
+task_types:
+  - key: meeting
+    label: Reunión
+    premoji: "🫱🏼‍🫲🏽"
+    text_prefixes:
+      - "reunión:"
+      - "reunion:"
+      - "reunión :"
+      - "reunion :"
+    emoji_aliases:
+      - "🫱🏼‍🫲🏽"
+      - "🫱🏼🫲🏽"
+      - "🤝"
+
+  - key: task
+    label: Tarea
+    premoji: ""
+    text_prefixes: []
+    emoji_aliases: []
+
+# -----------------------------------------------------------------------------
+# Ejemplos de nuevos tipos que puedes descomentar o personalizar:
+# -----------------------------------------------------------------------------
+#  - key: bug
+#    label: Incidencia / Bug
+#    premoji: "🐛"
+#    text_prefixes:
+#      - "bug:"
+#      - "error:"
+#      - "fix:"
+#    emoji_aliases:
+#      - "🐛"
+#      - "🐞"
+#
+#  - key: spike
+#    label: Investigación
+#    premoji: "🔬"
+#    text_prefixes:
+#      - "spike:"
+#      - "investigar:"
+#    emoji_aliases:
+#      - "🔬"
+#      - "🧪"
+#
+#  - key: call
+#    label: Llamada rápida
+#    premoji: "📞"
+#    text_prefixes:
+#      - "call:"
+#      - "llamada:"
+#    emoji_aliases:
+#      - "📞"
+#      - "📲"

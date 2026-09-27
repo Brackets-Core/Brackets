@@ -47,6 +47,8 @@ DEFAULT_SETTINGS: Dict[str, object] = {
     "calendar": {
         "holidays": [],
         "vacations": [],
+        "closures": [],
+        "intensive_workdays": [],
     },
 }
 
@@ -157,6 +159,12 @@ class SettingsManager:
     def list_vacations(self) -> List[Dict[str, str]]:
         return list(self.data.get("calendar", {}).get("vacations", []))
 
+    def list_closures(self) -> List[Dict[str, str]]:
+        return list(self.data.get("calendar", {}).get("closures", []))
+
+    def list_intensive_days(self) -> List[Dict[str, str]]:
+        return list(self.data.get("calendar", {}).get("intensive_workdays", []))
+
     def describe_work_pattern(self) -> str:
         pattern = self.data["work_pattern"]
         defaults: Dict[str, str] = pattern.get("defaults", {})
@@ -251,6 +259,63 @@ class SettingsManager:
             vacations.pop(index)
             self._save(self.data)
 
+    def add_or_update_closure(self, date_str: str, name: str) -> None:
+        target = self._parse_date(date_str)
+        if not target:
+            raise ValueError("Fecha inválida para cierre de sede")
+        closures = self.data.setdefault("calendar", {}).setdefault("closures", [])
+        normalized = {"date": target.isoformat(), "name": name}
+
+        for idx, item in enumerate(closures):
+            if item.get("date") == normalized["date"]:
+                closures[idx] = normalized
+                break
+        else:
+            closures.append(normalized)
+            closures.sort(key=lambda x: x.get("date", ""))
+
+        self._save(self.data)
+
+    def delete_closure(self, index: int) -> None:
+        closures = self.data.get("calendar", {}).get("closures", [])
+        if 0 <= index < len(closures):
+            closures.pop(index)
+            self._save(self.data)
+
+    def add_or_update_intensive_day(self, start_or_date: str, end_date_str: Optional[str] = None, name: str = "Jornada Intensiva") -> None:
+        start_date = self._parse_date(start_or_date)
+        if not start_date:
+            raise ValueError("Fecha de inicio o fecha única inválida")
+
+        if end_date_str:
+            end_date = self._parse_date(end_date_str)
+            if not end_date or end_date < start_date:
+                raise ValueError("Rango de jornada intensiva inválido")
+            normalized = {"start": start_date.isoformat(), "end": end_date.isoformat(), "name": name}
+        else:
+            normalized = {"date": start_date.isoformat(), "name": name}
+
+        intensives = self.data.setdefault("calendar", {}).setdefault("intensive_workdays", [])
+
+        for idx, item in enumerate(intensives):
+            if normalized.get("date") and item.get("date") == normalized["date"]:
+                intensives[idx] = normalized
+                break
+            elif normalized.get("start") and item.get("start") == normalized["start"] and item.get("end") == normalized["end"]:
+                intensives[idx] = normalized
+                break
+        else:
+            intensives.append(normalized)
+            intensives.sort(key=lambda x: x.get("date") or x.get("start", ""))
+
+        self._save(self.data)
+
+    def delete_intensive_day(self, index: int) -> None:
+        intensives = self.data.get("calendar", {}).get("intensive_workdays", [])
+        if 0 <= index < len(intensives):
+            intensives.pop(index)
+            self._save(self.data)
+
     # ------------------------------------------------------------------
     # Resolución de ubicación
     # ------------------------------------------------------------------
@@ -261,13 +326,25 @@ class SettingsManager:
         if holiday_note:
             return self._location_to_emoji("off"), holiday_note
 
+        # Cierre de sede central (día libre / no laborable oficial)
+        closure_note = self._match_closure(target_date.date())
+        if closure_note:
+            return self._location_to_emoji("off"), closure_note
+
         # Vacaciones
         vacation_note = self._match_vacation(target_date.date())
         if vacation_note:
             return self._location_to_emoji("off"), vacation_note
 
+        # Día laboral normal según patrón
         day_key = WEEKDAY_KEYS[target_date.weekday()]
         emoji = self._location_for_day(day_key, week_number)
+
+        # Jornada Intensiva (mantiene la ubicación habitual y añade el sufijo descriptivo)
+        intensive_note = self._match_intensive(target_date.date())
+        if intensive_note:
+            return emoji, intensive_note
+
         return emoji, None
 
     def get_day_location(self, target_date: datetime, week_number: Optional[int] = None) -> str:
@@ -333,6 +410,22 @@ class SettingsManager:
             end = self._parse_date(period.get("end", ""))
             if start and end and start <= target <= end:
                 return period.get("name") or "Vacaciones"
+        return None
+
+    def _match_closure(self, target: date) -> Optional[str]:
+        for closure in self.data.get("calendar", {}).get("closures", []):
+            if self._parse_date(closure.get("date", "")) == target:
+                return closure.get("name") or "Cierre de sede central"
+        return None
+
+    def _match_intensive(self, target: date) -> Optional[str]:
+        for item in self.data.get("calendar", {}).get("intensive_workdays", []):
+            if item.get("date") and self._parse_date(item.get("date", "")) == target:
+                return item.get("name") or "Jornada Intensiva"
+            start = self._parse_date(item.get("start", ""))
+            end = self._parse_date(item.get("end", ""))
+            if start and end and start <= target <= end:
+                return item.get("name") or "Jornada Intensiva"
         return None
 
     def _normalize_holidays(self, holidays: List[Dict[str, str]]) -> List[Dict[str, str]]:
