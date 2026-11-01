@@ -69,6 +69,7 @@ class TestRelationalBitacoraRenderer(unittest.TestCase):
         self.assertIn(f"## {first_day.location_emoji}{first_day.day_number}", markdown)
 
         # 5. Definiciones al pie
+        self.assertIn("## Definiciones", markdown)
         self.assertIn("<!-- Definiciones -->", markdown)
 
     def test_toggle_task_and_regenerate(self):
@@ -136,7 +137,7 @@ class TestRelationalBitacoraRenderer(unittest.TestCase):
         markdown = BitacoraRenderer.render_week(week, self.manager)
 
         self.assertIn(f"- [ ] Revisar nueva funcionalidad de pagos {jira_def.id}", markdown)
-        self.assertIn("[🎫ATLM-99999]: https://mangospain.atlassian.net/browse/ATLM-99999", markdown)
+        self.assertIn(f"[🎫ATLM-99999]: {self.manager.jira_base_url}ATLM-99999", markdown)
 
     def test_add_note_and_render(self):
         """Valida que añadir una nota la incorpore en la sección ## 📝Notes."""

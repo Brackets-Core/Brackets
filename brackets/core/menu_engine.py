@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from brackets.core.menu_navigator import MenuOption
+
 
 DEFAULT_MENU_CONFIG: Dict[str, Any] = {
     "menus": {
@@ -135,3 +137,37 @@ class MenuEngine:
                 result[str(menu_id)] = conflicts
 
         return result
+
+    def get_menu_options(
+        self,
+        menu_id: str,
+        context: Optional[Dict[str, Any]] = None,
+        default_options: Optional[List[MenuOption]] = None,
+    ) -> List[MenuOption]:
+        """Obtiene las opciones de menú como objetos MenuOption para MenuNavigator."""
+        items = self.visible_items(menu_id, context or {})
+        if not items:
+            return list(default_options) if default_options else []
+
+        options: List[MenuOption] = []
+        for item in items:
+            keys = item.get("keys", [])
+            if isinstance(keys, list) and keys:
+                primary_key = str(keys[0])
+                aliases = [str(k) for k in keys[1:]]
+            else:
+                primary_key = str(item.get("id", ""))
+                aliases = []
+            label = str(item.get("label", ""))
+            action_id = str(item.get("command") or item.get("id", ""))
+            group = item.get("group")
+            options.append(
+                MenuOption(
+                    key=primary_key,
+                    label=label,
+                    action_id=action_id,
+                    aliases=aliases,
+                    group=group,
+                )
+            )
+        return options

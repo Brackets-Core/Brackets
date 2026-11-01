@@ -92,7 +92,7 @@ class MonthConsolidator(BaseConsolidator):
         in_defs = False
         for line in lines:
             stripped = line.strip()
-            if "<!--" in stripped and "definicion" in stripped.lower():
+            if (stripped.startswith("## ") and "definicion" in stripped.lower()) or ("<!--" in stripped and "definicion" in stripped.lower()):
                 in_defs = True
                 continue
             m = re.match(r'^\s*(\[[^\]\n]+\]):\s*(\S.*)$', line)
@@ -283,6 +283,7 @@ class MonthConsolidator(BaseConsolidator):
 
         # 6. DEFINICIONES DEL MES (unificadas y deduplicadas al pie)
         if all_month_definitions:
+            content_parts.append("## Definiciones")
             content_parts.append("<!-- Definiciones -->")
             for def_id, url in sorted(all_month_definitions.items()):
                 content_parts.append(f"{def_id}: {url}")

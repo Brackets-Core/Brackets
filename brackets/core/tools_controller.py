@@ -116,6 +116,31 @@ class ToolsController:
     def _handle_pomodoro(self) -> None:
         self.clear_screen()
         if self.run_pomodoro is None:
+            ui_mode = "retro"
+            try:
+                from brackets.managers.settings_manager import SettingsManager
+                cfg = SettingsManager(self.vault_root).load_config()
+                pomo_cfg = cfg.get("pomodoro", {})
+                if isinstance(pomo_cfg, dict):
+                    ui_mode = pomo_cfg.get("ui_mode", "retro")
+                elif cfg.get("feature_flags", {}).get("pomodoro_retro") is False:
+                    ui_mode = "console"
+            except Exception:
+                ui_mode = "retro"
+
+            if ui_mode == "retro" and self.input is input:
+                try:
+                    from brackets.modules.pomodoro_retro_ui import launch_retro_pomodoro
+                    self.print("🍅 Abriendo Pomodoro Retro (Tomatín)...")
+                    launch_retro_pomodoro(
+                        vault_dir=self.vault_root,
+                        event_log=getattr(self, '_event_log', None),
+                        entity_manager=self.entity_manager,
+                    )
+                    return
+                except Exception:
+                    pass
+
             from brackets.modules.pomodoro_timer import run_pomodoro_standalone
 
             event_log = getattr(self, '_event_log', None)

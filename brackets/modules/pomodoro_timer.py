@@ -11,7 +11,7 @@ Incluye:
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import shutil
 import time
@@ -140,7 +140,7 @@ class PomodoroTimerEngine:
         self.is_running = True
         self.is_paused = False
         self.last_event = "focus_started"
-        self._session_start_ts = datetime.utcnow().isoformat() + "Z"
+        self._session_start_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     def start_break(self) -> None:
         self.phase = "break"
@@ -149,7 +149,7 @@ class PomodoroTimerEngine:
         self.is_running = True
         self.is_paused = False
         self.last_event = "break_started"
-        self._session_start_ts = datetime.utcnow().isoformat() + "Z"
+        self._session_start_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     def pause(self) -> None:
         if self.is_running and not self.is_paused:
@@ -204,7 +204,7 @@ class PomodoroTimerEngine:
         self.last_session_record = {
             "phase": self.phase,
             "started_at": self._session_start_ts,
-            "ended_at": datetime.utcnow().isoformat() + "Z",
+            "ended_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "planned_seconds": self.phase_total_seconds,
             "workday_progress": round(self.workday_progress(), 4),
             "task_id": self.active_task_id,
@@ -440,7 +440,7 @@ class PomodoroConsoleApp:
             return None
 
         if p_choice == "+":
-            new_pid = self.input_fn("Código del nuevo proyecto (ej: AMR_LOGISTICS): ").strip()
+            new_pid = self.input_fn("Código del nuevo proyecto (ej: PROJ_ALPHA): ").strip()
             if new_pid:
                 new_pname = self.input_fn(f"Nombre descriptivo para '{new_pid}': ").strip()
                 p_obj = self.manager.ensure_project(new_pid, name=new_pname)
@@ -679,6 +679,7 @@ class PomodoroConsoleApp:
             self.print_fn("5. 🎯 Seleccionar / Cambiar tarea")
             self.print_fn("6. ⚙️ Configurar timer")
             self.print_fn("7. 📊 Ver resumen")
+            self.print_fn("8. 🍅 Abrir App Retro (Tomatín)")
             self.print_fn("0. ↩️ Salir")
 
             choice = self.input_fn("Opción: ").strip()
@@ -724,6 +725,12 @@ class PomodoroConsoleApp:
                 self._configure()
             elif choice == "7":
                 self._show_summary()
+            elif choice in ("8", "g", "gui"):
+                try:
+                    from brackets.modules.pomodoro_retro_ui import launch_retro_pomodoro
+                    launch_retro_pomodoro(vault_dir=self.base_dir)
+                except Exception as ex:
+                    self.print_fn(f"⚠️ Error al abrir app retro ({ex})")
             elif choice == "0":
                 self.print_fn("👋 Saliendo del timer.")
                 break

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Brackets Web Hub</title>
+  
+  <meta name="description" content="Sistema Operativo Personal de Productividad y Bitácoras Semanales">
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f5f8" media="(prefers-color-scheme: light)">
+  
+  <!-- PWA & Apple Touch Icons -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icon-192.svg">
+  <link rel="apple-touch-icon" href="icon-192.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Brackets">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <img src="icon-192.svg" alt="Brackets Logo" class="brand-logo">
+        <h1 class="brand-title">Brackets</h1>
+      </div>
+
+      <div class="header-controls">
+        <button id="btnPwaInstall" class="btn-pwa-install" title="Instalar Brackets como App de escritorio">
+          📲 Instalar App
+        </button>
+
+        <select id="vaultSelect" class="vault-select" title="Seleccionar Vault">
+          <!-- Opciones dinámicas inyectadas por JS -->
+        </select>
+
+        <button id="btnSync" class="btn-icon" title="Sincronizar Markdown y YAML">
+          🔄
+        </button>
+      </div>
+    </header>
+
+    <!-- Week Banner -->
+    <div class="week-banner">
+      <div id="weekBadge" class="week-badge">
+        🗓️ Cargando semana...
+      </div>
+      <div id="weightBadge" class="weight-badge" style="display: none;"></div>
+    </div>
+
+    <!-- Days Strip / Carousel -->
+    <div id="daysStrip" class="days-strip">
+      <!-- Días inyectados dinámicamente -->
+    </div>
+
+    <!-- Active Day Header & Location Picker -->
+    <div class="active-day-header">
+      <div class="active-day-info">
+        <span id="activeDayTitle" class="active-day-title">Día activo</span>
+      </div>
+      <div id="locGroup" class="location-picker-group">
+        <!-- Botones de ubicación inyectados dinámicamente -->
+      </div>
+    </div>
+
+    <!-- Quick Task Capture Card -->
+    <section class="quick-capture-card">
+      <div class="capture-header">
+        <span class="capture-label">⚡ Captura Rápida</span>
+        <div class="status-toggle-group">
+          <button id="btnTogglePending" class="btn-status-toggle active" type="button">
+            Pendiente [ ]
+          </button>
+          <button id="btnToggleDone" class="btn-status-toggle" type="button" title="Registrar trabajo que ya se completó">
+            ✓ Hecha [x]
+          </button>
+        </div>
+      </div>
+
+      <div class="capture-input-row">
+        <input 
+          id="taskInput" 
+          class="task-input" 
+          type="text" 
+          placeholder="Nueva tarea para hoy... (ej: Reunión: Sync #[PROYECTO])"
+          autocomplete="off"
+        >
+        <button id="btnAddTask" class="btn-add-task" type="button">
+          Añadir Pendiente [ ]
+        </button>
+      </div>
+
+      <div class="capture-desc-row">
+        <textarea 
+          id="descTextarea" 
+          class="desc-textarea" 
+          placeholder="💬 Descripción / notas de la tarea (opcional, sub-viñetas)... (Ctrl+Enter para guardar)"
+          rows="2"
+        ></textarea>
+      </div>
+    </section>
+
+    <!-- Today Tasks Section -->
+    <section>
+      <h2 class="section-title">
+        <span>📋</span> Tareas de Hoy
+      </h2>
+      <div id="todayTasksList" class="task-list">
+        <!-- Tareas inyectadas dinámicamente -->
+      </div>
+    </section>
+
+    <!-- Week Tasks Section -->
+    <section>
+      <h2 class="section-title">
+        <span>⏳</span> Tareas de la Semana (Sin día fijo)
+      </h2>
+      <div id="weekTasksList" class="task-list">
+        <!-- Tareas semanales inyectadas dinámicamente -->
+      </div>
+    </section>
+
+    <!-- Week Notes Section -->
+    <section>
+      <h2 class="section-title">
+        <span>📝</span> Notas de la Semana
+      </h2>
+      <div id="notesContainer" class="notes-container">
+        <!-- Notas inyectadas dinámicamente -->
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>Brackets v1.0 • Sistema Operativo de Productividad</span>
+      <span>Local-First & Multi-Vault</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 Módulo para generar contenido de archivos de bitácora.
 """
 
+import os
 import calendar
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -60,13 +61,34 @@ class ContentGenerator:
 
         return content
 
+    def _get_days_per_week(self) -> int:
+        """Determina el número de días por semana según configuración o tipo de vault."""
+        base_dir = getattr(self.settings, "base_dir", ".") if self.settings else "."
+        config_path = os.path.join(base_dir, "data", "config.yaml")
+        if os.path.exists(config_path):
+            try:
+                import yaml
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    if "days_per_week" in cfg:
+                        return int(cfg["days_per_week"])
+                    if str(cfg.get("vault_type", "")).strip().lower() == "personal":
+                        return 7
+            except Exception:
+                pass
+        return 5
+
     def generate_weekly_content_manual(self,
                                       year: int,
                                       month: int,
                                       week: int,
                                       weight: Optional[float] = None,
-                                      work_locations: Optional[dict] = None) -> str:
+                                      work_locations: Optional[dict] = None,
+                                      days_count: Optional[int] = None) -> str:
         """Genera contenido de bitácora semanal de forma manual sin archivo previo."""
+
+        if days_count is None:
+            days_count = self._get_days_per_week()
 
         # Calcular fechas de la semana ISO
         try:
@@ -76,8 +98,8 @@ class ContentGenerator:
             week_1_monday = jan_4 - timedelta(days=jan_4.weekday())
             target_monday = week_1_monday + timedelta(weeks=week - 1)
 
-            # Generar fechas de lunes a viernes
-            dates = [target_monday + timedelta(days=i) for i in range(5)]
+            # Generar fechas según days_count (5 para laboral, 7 para personal)
+            dates = [target_monday + timedelta(days=i) for i in range(days_count)]
         except Exception as e:
             print(f"❌ Error calculando fechas: {e}")
             return None
@@ -113,6 +135,7 @@ class ContentGenerator:
             content += f"{header}\n"
             content += "  - \n\n"
 
+        content += "## Definiciones\n"
         content += "<!-- Definiciones -->\n"
         return content
 

@@ -20,6 +20,8 @@ def has_action_flags(args) -> bool:
             args.monthly,
             bool(args.add_task),
             args.timer,
+            getattr(args, "timer_gui", False),
+            getattr(args, "web", False),
             args.consolidate,
             args.consolidate_year,
             args.list,
@@ -33,6 +35,14 @@ def has_action_flags(args) -> bool:
 def dispatch_cli_action(args, manager, vault_directory: str) -> Optional[int]:
     """Execute direct CLI actions and return an exit code, or None for interactive mode."""
     event_log = manager.event_log
+
+    if getattr(args, "web", False):
+        from brackets.web import run_web_server
+
+        port = getattr(args, "port", 8080)
+        open_browser = not getattr(args, "no_browser", False)
+        run_web_server(port=port, workspace_root=vault_directory, open_browser=open_browser)
+        return 0
 
     if args.add_task:
         target = args.task_target or "weekly"
@@ -60,6 +70,14 @@ def dispatch_cli_action(args, manager, vault_directory: str) -> Optional[int]:
         if success:
             event_log.append("bitacora_generated", type="monthly", source="cli")
         return 0 if success else 1
+
+    if getattr(args, "timer_gui", False):
+        try:
+            from brackets.modules.pomodoro_retro_ui import launch_retro_pomodoro
+            launch_retro_pomodoro(vault_directory)
+            return 0
+        except Exception as ex:
+            print(f"⚠️ Error al abrir app retro ({ex}), abriendo consola...")
 
     if args.timer:
         from brackets.modules.pomodoro_timer import run_pomodoro_standalone

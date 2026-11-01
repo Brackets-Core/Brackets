@@ -77,6 +77,17 @@ class ContentParser:
                 is_subsection = line.strip().startswith('### ')
                 is_cancelled = bool(re.search(r'-\s*\[[ xX]?\]\s*~~.+?~~', line)) or (line.strip().startswith("- ~~") and line.strip().endswith("~~"))
 
+                is_meeting = False
+                if is_pending:
+                    try:
+                        from brackets.models.task_types import TaskTypeRegistry
+                        task_text = re.sub(r'^\s*-\s*\[\s*\]\s*', '', line)
+                        t_type, _ = TaskTypeRegistry.detect_task_type_and_clean_title(task_text)
+                        if t_type == "meeting":
+                            is_meeting = True
+                    except Exception:
+                        pass
+
                 if not (is_pending or is_completed or is_subsection or is_cancelled):
                     continue
 
@@ -87,8 +98,8 @@ class ContentParser:
                 # Verificar si algún ancestro en el stack está completado o cancelado
                 has_completed_ancestor = any(is_task and completed for _, is_task, completed in stack)
 
-                # Solo procesar si NO tiene un ancestro completado/cancelado Y NO está completada/cancelada ella misma
-                if (is_pending or is_subsection) and not has_completed_ancestor and not is_completed and not is_cancelled:
+                # Solo procesar si NO tiene un ancestro completado/cancelado Y NO está completada/cancelada ni es reunión
+                if (is_pending or is_subsection) and not has_completed_ancestor and not is_completed and not is_cancelled and not is_meeting:
                     key = line.strip()
                     if key not in seen:
                         pending_tasks.append(line)

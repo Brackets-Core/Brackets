@@ -72,18 +72,19 @@ class TestCoreDailyHubController(unittest.TestCase):
             input_fn=mock_input,
             print_fn=self._mock_print
         )
-        controller.active_day_number = 17
+        controller.active_day_number = 24
 
         result = controller.run()
         self.assertEqual(result, "exit")
 
-        # Verificar que la tarea TSK-0010 cambió de estado
-        task = self.entity_manager.tasks.get("TSK-0010")
-        self.assertFalse(task.is_done)  # Antes estaba done, ahora es pending
+        # Verificar que la primera tarea del día 24 (TSK-0733) cambió de estado a done
+        task = self.entity_manager.tasks.get("TSK-0733")
+        self.assertTrue(task.is_done)
 
     def test_run_toggle_task_by_direct_number(self):
-        """Simula pulsar directamente '1' para marcar/desmarcar la primera tarea y luego 'q' para salir."""
-        inputs = ["1", "q"]
+        """Simula pulsar directamente '1' para abrir el menú contextual de la tarea y pulsar Enter/1 para marcarla."""
+        # '1' selecciona la tarea 1, '' (Enter) selecciona Marcar/completar, 'q' sale del Hub
+        inputs = ["1", "", "q"]
 
         def mock_input(prompt=""):
             return inputs.pop(0)
@@ -94,14 +95,144 @@ class TestCoreDailyHubController(unittest.TestCase):
             input_fn=mock_input,
             print_fn=self._mock_print
         )
-        controller.active_day_number = 17
+        controller.active_day_number = 24
 
         result = controller.run()
         self.assertEqual(result, "exit")
 
-        # Verificar que la tarea TSK-0010 cambió de estado
-        task = self.entity_manager.tasks.get("TSK-0010")
-        self.assertFalse(task.is_done)  # Antes estaba done, ahora es pending
+        # Verificar que la tarea TSK-0733 cambió de estado a done
+        task = self.entity_manager.tasks.get("TSK-0733")
+        self.assertTrue(task.is_done)
+
+    def test_run_toggle_task_by_direct_number_with_read_single_key_enter(self):
+        """Simula seleccionar la tarea '1' y pulsar la tecla Enter (KEY_ENTER) usando read_single_key."""
+        from brackets.core.menu_navigator import KEY_ENTER
+        keys = ["1", KEY_ENTER, "q"]
+
+        def mock_read_key(prompt=""):
+            return keys.pop(0)
+
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=lambda prompt="": "",
+            print_fn=self._mock_print,
+            read_single_key_fn=mock_read_key
+        )
+        controller.active_day_number = 24
+
+        result = controller.run()
+        self.assertEqual(result, "exit")
+
+        task = self.entity_manager.tasks.get("TSK-0733")
+        self.assertTrue(task.is_done)
+
+    def test_task_contextual_actions_menu(self):
+        """Prueba las distintas acciones del menú contextual de una tarea seleccionada (Tachar, Volver, etc.)."""
+        # 1) Tachar tarea 1: '1' selecciona tarea, '2' selecciona Tachar, '' confirma Enter
+        # 2) 'q' sale del Hub
+        inputs = ["1", "2", "", "q"]
+
+        def mock_input(prompt=""):
+            return inputs.pop(0)
+
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=mock_input,
+            print_fn=self._mock_print
+        )
+        controller.active_day_number = 24
+
+        result = controller.run()
+        self.assertEqual(result, "exit")
+
+        # Verificar que la tarea TSK-0733 ahora está tachada/cancelada
+        task = self.entity_manager.tasks.get("TSK-0733")
+        self.assertTrue(task.is_cancelled)
+
+    def test_task_contextual_action_assign_project(self):
+        """Prueba asignar un nuevo proyecto a una tarea mediante el menú contextual."""
+        inputs = [
+            "1",              # Seleccionar tarea 1
+            "3",              # Acción 3: Asignar a Proyecto o Topic
+            "+",              # Crear nuevo proyecto o topic
+            "p",              # Proyecto
+            "PROJ_ALPHA",     # Código
+            "Proyecto Alpha", # Nombre descriptivo
+            "",               # Presiona Enter para continuar...
+            "q"               # Salir del Hub
+        ]
+
+        def mock_input(prompt=""):
+            return inputs.pop(0)
+
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=mock_input,
+            print_fn=self._mock_print
+        )
+        controller.active_day_number = 24
+
+        result = controller.run()
+        self.assertEqual(result, "exit")
+
+        task = self.entity_manager.tasks.get("TSK-0733")
+        self.assertEqual(task.project_id, "PROJ_ALPHA")
+
+    def test_task_contextual_action_delete(self):
+        """Prueba eliminar una tarea mediante el menú contextual."""
+        inputs = [
+            "1",  # Seleccionar tarea 1
+            "4",  # Acción 4: Eliminar
+            "s",  # Confirmar eliminación (s/N)
+            "",   # Presiona Enter para continuar...
+            "q"   # Salir del Hub
+        ]
+
+        def mock_input(prompt=""):
+            return inputs.pop(0)
+
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=mock_input,
+            print_fn=self._mock_print
+        )
+        controller.active_day_number = 24
+
+        result = controller.run()
+        self.assertEqual(result, "exit")
+
+        week, day = controller._get_active_week_and_day()
+        self.assertNotIn("TSK-0733", day.task_ids)
+
+    def test_task_contextual_action_back(self):
+        """Prueba volver al Hub sin realizar acciones en la tarea."""
+        inputs = [
+            "1",  # Seleccionar tarea 1
+            "0",  # Volver al Hub
+            "q"   # Salir del Hub
+        ]
+
+        def mock_input(prompt=""):
+            return inputs.pop(0)
+
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=mock_input,
+            print_fn=self._mock_print
+        )
+        controller.active_day_number = 24
+
+        result = controller.run()
+        self.assertEqual(result, "exit")
+
+        task = self.entity_manager.tasks.get("TSK-0733")
+        self.assertFalse(task.is_done)
+        self.assertFalse(task.is_cancelled)
 
     def test_run_switch_day(self):
         """Simula pulsar 's', elegir día 4 (día 20) y luego 'q'."""
@@ -396,7 +527,8 @@ class TestCoreDailyHubController(unittest.TestCase):
         # Verificar que la definición existe en el EntityManager
         self.assertIn("[🎫SUPPLY-18495]", self.entity_manager.definitions)
         defn = self.entity_manager.definitions["[🎫SUPPLY-18495]"]
-        self.assertEqual(defn.url, "https://mangospain.atlassian.net/browse/SUPPLY-18495")
+        expected_url = f"{self.entity_manager.jira_base_url}SUPPLY-18495"
+        self.assertEqual(defn.url, expected_url)
 
     def test_render_week_default_definitions_section(self):
         """Verifica que la sección <!-- Definiciones --> siempre se incluye por defecto en la bitácora semanal."""
@@ -428,6 +560,25 @@ class TestCoreDailyHubController(unittest.TestCase):
         self.assertEqual(result, "exit")
         output_text = "\n".join(self.output_lines)
         self.assertIn("POMODORO TIMER", output_text)
+
+    def test_run_launch_retro_pomodoro(self):
+        """Verifica que _action_run_pomodoro invoque launch_retro_pomodoro por defecto."""
+        from unittest.mock import patch
+        controller = DailyHubController(
+            vault_root=self.tmp_dir,
+            entity_manager=self.entity_manager,
+            input_fn=input,  # Simula entorno interactivo estándar
+            print_fn=self._mock_print
+        )
+        week = self.entity_manager.load_week(2026, 34)
+        day = week.days[0]
+
+        with patch("brackets.modules.pomodoro_retro_ui.launch_retro_pomodoro") as mock_launch:
+            controller._action_run_pomodoro(week, day)
+            mock_launch.assert_called_once()
+            _, kwargs = mock_launch.call_args
+            self.assertEqual(kwargs.get("vault_dir"), self.tmp_dir)
+            self.assertEqual(kwargs.get("current_day"), day)
 
     def test_run_cancel_task_from_hub(self):
         """Simula pulsar 'x' (cancelar/tachar tarea), seleccionar la tarea '1' y salir con 'q'."""

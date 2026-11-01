@@ -21,6 +21,15 @@ def run_startup_flow(
     Returns:
         Optional exit code. None means interactive flow ended naturally.
     """
+    if getattr(args, "web", False):
+        from brackets.web import run_web_server
+
+        port = getattr(args, "port", 8080)
+        open_browser = not getattr(args, "no_browser", False)
+        target_root = args.directory or current_dir
+        run_web_server(port=port, workspace_root=target_root, open_browser=open_browser)
+        return 0
+
     has_flags = has_action_flags_fn(args)
     vault_directory, early_exit_code = select_vault_directory_fn(
         directory_arg=args.directory,

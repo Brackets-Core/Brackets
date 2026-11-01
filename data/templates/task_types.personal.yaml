@@ -1,0 +1,98 @@
+# =============================================================================
+# Tipos de Tareas y Premojis para Vault Personal (Brackets)
+# =============================================================================
+# Diseñado para hábitos diarios, salud, finanzas, hogar y tiempo personal.
+
+task_types:
+  - key: habit
+    label: Hábito / Rutina
+    premoji: "🌱"
+    text_prefixes:
+      - "hábito:"
+      - "habito:"
+      - "rutina:"
+      - "h:"
+    emoji_aliases:
+      - "🌱"
+      - "🧘"
+      - "🏃"
+      - "💧"
+      - "💪"
+      - "📖"
+
+  - key: chore
+    label: Hogar / Recado
+    premoji: "🛒"
+    text_prefixes:
+      - "compra:"
+      - "comprar:"
+      - "recado:"
+      - "casa:"
+    emoji_aliases:
+      - "🛒"
+      - "🧹"
+      - "🧺"
+      - "🏠"
+      - "🔧"
+
+  - key: health
+    label: Salud / Cita
+    premoji: "🩺"
+    text_prefixes:
+      - "médico:"
+      - "medico:"
+      - "salud:"
+      - "cita:"
+      - "dentista:"
+    emoji_aliases:
+      - "🩺"
+      - "💊"
+      - "🦷"
+      - "🏥"
+
+  - key: finance
+    label: Finanzas / Trámite
+    premoji: "💳"
+    text_prefixes:
+      - "pago:"
+      - "pagar:"
+      - "banco:"
+      - "trámite:"
+      - "tramite:"
+    emoji_aliases:
+      - "💳"
+      - "💰"
+      - "🧾"
+      - "🏦"
+
+  - key: call
+    label: Llamada / Contacto
+    premoji: "📞"
+    text_prefixes:
+      - "llamar:"
+      - "llamada:"
+    emoji_aliases:
+      - "📞"
+      - "📱"
+      - "💬"
+
+  - key: event
+    label: Evento / Ocio
+    premoji: "🎉"
+    text_prefixes:
+      - "evento:"
+      - "cumple:"
+      - "cumpleaños:"
+      - "fiesta:"
+      - "concierto:"
+    emoji_aliases:
+      - "🎉"
+      - "🎂"
+      - "✈️"
+      - "🎟️"
+
+  - key: task
+    label: Tarea
+    premoji: ""
+    text_prefixes: []
+    emoji_aliases: []

@@ -38,6 +38,7 @@ class EntityManager:
         self.definitions: Dict[str, Definition] = {}
         self.people: Dict[str, Person] = {}
         self.weeks: Dict[str, WeekSchedule] = {}  # key: "YYYY-WXX"
+        self.jira_base_url: str = "https://jira.atlassian.net/browse/"
 
         self.load_all()
 
@@ -49,6 +50,20 @@ class EntityManager:
 
     def load_all(self) -> None:
         """Carga todas las tablas de entidades desde el disco."""
+        # Cargar configuración de integraciones (ej: Jira base URL) si existe en el vault
+        config_file = os.path.join(self.base_data_dir, "config.yaml")
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                jira_cfg = cfg.get("integrations", {}).get("jira", {})
+                if isinstance(jira_cfg, dict) and "base_url" in jira_cfg:
+                    self.jira_base_url = str(jira_cfg["base_url"])
+                elif "jira_base_url" in cfg:
+                    self.jira_base_url = str(cfg["jira_base_url"])
+            except Exception:
+                pass
+
         # Cargar tipos de tareas configurados en el vault (YAML antes que código)
         from brackets.models.task_types import TaskTypeRegistry
         task_types_file = os.path.join(self.base_data_dir, "task_types.yaml")
@@ -433,7 +448,8 @@ class EntityManager:
         project_id: Optional[str] = None,
         topic_id: Optional[str] = None,
         recurring_id: Optional[str] = None,
-        task_type: str = "task"
+        task_type: str = "task",
+        description: Optional[str] = None
     ) -> RecurringTask:
         """Registra una nueva tarea o reunión recurrente."""
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -455,7 +471,8 @@ class EntityManager:
             topic_id=topic_id,
             active=True,
             created_at=today_str,
-            task_type=task_type
+            task_type=task_type,
+            description=description.strip() if description else None
         )
         self.recurring_tasks[recurring_id] = rec
         self.save_recurring_tasks()
@@ -516,352 +533,18 @@ class EntityManager:
     def apply_recurring_tasks(self, week: WeekSchedule) -> int:
         """
         Evalúa e inyecta las tareas/reuniones recurrentes activas en la semana indicada.
-        Reaprovecha instancias existentes de tareas recurrentes asignándoles la fecha exacta
-        del día que aparecen en la bitácora y reseteando su estado a 'pending'.
-        Para recurrencias multidía (como Daily S^3 en Lunes, Miércoles, Viernes),
-        mantiene instancias distintas e independientes por cada día de la semana.
-        Es totalmente idempotente: no duplica tareas si ya existen en ese día o semana.
-        Devuelve el número de tareas inyectadas o reaprovechadas en la semana.
+        Delega en RecurringTaskService para mantener separación modular de responsabilidades.
         """
-        active_recs = self.list_recurring_tasks(active_only=True)
-        if not active_recs or not week.days:
-            return 0
-
-        # Mapear cada day.day_number a su día de la semana (0=Lunes...6=Domingo)
-        day_to_weekday: Dict[int, int] = {}
-        for iso_wday in range(1, 8):
-            try:
-                dt = datetime.fromisocalendar(week.year, week.week_number, iso_wday)
-                day_to_weekday[dt.day] = dt.weekday()
-            except Exception:
-                pass
-
-        weekday_to_day_schedule: Dict[int, DaySchedule] = {}
-        for idx, d in enumerate(week.days):
-            wday = day_to_weekday.get(d.day_number, idx % 7)
-            weekday_to_day_schedule[wday] = d
-
-        injected_count = 0
-
-        for rec in active_recs:
-            # Obtener todas las instancias de tareas existentes asociadas a esta recurrencia
-            existing_rec_tasks = [
-                t for t in self.tasks.values()
-                if t.recurring_id == rec.id or (not t.recurring_id and t.title == rec.title)
-            ]
-            existing_rec_tasks.sort(key=lambda x: x.id)
-
-            # Asegurar que todas tengan el recurring_id seteado y hereden atributos canónicos
-            for t in existing_rec_tasks:
-                if not t.recurring_id:
-                    t.recurring_id = rec.id
-                t.task_type = rec.task_type
-                if rec.project_id and (not t.project_id or t.project_id == "POR_ASIGNAR"):
-                    t.project_id = rec.project_id
-
-            if rec.recurrence_type == "weekly_days":
-                # Días específicos (ej: [0, 2, 4] para Lunes, Miércoles, Viernes)
-                for idx, target_wday in enumerate(rec.days_of_week):
-                    target_day = weekday_to_day_schedule.get(target_wday)
-                    if not target_day:
-                        continue
-
-                    # No agendar tareas ni reuniones recurrentes en días festivos/vacaciones (🏖️)
-                    if target_day.location_emoji == "🏖️":
-                        to_remove = [
-                            tid for tid in target_day.task_ids
-                            if self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title)
-                        ]
-                        for tid in to_remove:
-                            target_day.task_ids.remove(tid)
-                        continue
-
-                    try:
-                        target_date = datetime.fromisocalendar(week.year, week.week_number, target_wday + 1).strftime("%Y-%m-%d")
-                    except Exception:
-                        target_date = datetime.now().strftime("%Y-%m-%d")
-
-                    # Comprobar si ya existe en target_day
-                    already_in_day = any(
-                        (self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title))
-                        for tid in target_day.task_ids
-                    )
-                    if already_in_day:
-                        continue
-
-                    # REAPROVECHAR instancia existente correspondiente al slot `idx`
-                    if idx < len(existing_rec_tasks):
-                        task = existing_rec_tasks[idx]
-                        # Si esta instancia ya está en target_day, no hacer nada
-                        if task.id in target_day.task_ids:
-                            continue
-                        # Si esta instancia ya fue asignada a otro día de la semana (por haber sido movida),
-                        # no duplicarla ni reinyectarla en target_day
-                        if any(task.id in d.task_ids for d in week.days):
-                            continue
-
-                        task.status = "pending"
-                        task.completed_at = None
-                        task.created_at = target_date
-                        task.task_type = rec.task_type
-                        if rec.project_id and (not task.project_id or task.project_id == "POR_ASIGNAR"):
-                            task.project_id = rec.project_id
-                        task.topic_id = rec.topic_id
-                        task.recurring_id = rec.id
-                        target_day.task_ids.append(task.id)
-                        injected_count += 1
-                    else:
-                        new_task = self.create_task(
-                            title=rec.title,
-                            project_id=rec.project_id,
-                            topic_id=rec.topic_id,
-                            year=week.year,
-                            week_num=week.week_number,
-                            day_number=target_day.day_number,
-                            recurring_id=rec.id,
-                            task_type=rec.task_type
-                        )
-                        new_task.created_at = target_date
-                        existing_rec_tasks.append(new_task)
-                        injected_count += 1
-
-            elif rec.recurrence_type == "interval_weeks":
-                # Cada N semanas (ej: cada 4 semanas los viernes o cada 2 semanas los martes)
-                if (week.week_number - rec.base_week) % rec.interval_weeks == 0:
-                    target_day = weekday_to_day_schedule.get(rec.day_of_week)
-                    if not target_day:
-                        target_day = week.days[-1]
-
-                    # No agendar tareas ni reuniones recurrentes en días festivos/vacaciones (🏖️)
-                    if target_day.location_emoji == "🏖️":
-                        to_remove = [
-                            tid for tid in target_day.task_ids
-                            if self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title)
-                        ]
-                        for tid in to_remove:
-                            target_day.task_ids.remove(tid)
-                        continue
-
-                    try:
-                        target_date = datetime.fromisocalendar(week.year, week.week_number, rec.day_of_week + 1).strftime("%Y-%m-%d")
-                    except Exception:
-                        target_date = datetime.now().strftime("%Y-%m-%d")
-
-                    already_in_day = any(
-                        (self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title))
-                        for tid in target_day.task_ids
-                    )
-                    if already_in_day:
-                        continue
-
-                    if existing_rec_tasks:
-                        task = existing_rec_tasks[0]
-                        # Si ya está asignada en cualquier día de la semana, no duplicar
-                        if any(task.id in d.task_ids for d in week.days):
-                            continue
-
-                        task.status = "pending"
-                        task.completed_at = None
-                        task.created_at = target_date
-                        task.task_type = rec.task_type
-                        if rec.project_id and (not task.project_id or task.project_id == "POR_ASIGNAR"):
-                            task.project_id = rec.project_id
-                        task.topic_id = rec.topic_id
-                        task.recurring_id = rec.id
-                        target_day.task_ids.append(task.id)
-                        injected_count += 1
-                    else:
-                        new_task = self.create_task(
-                            title=rec.title,
-                            project_id=rec.project_id,
-                            topic_id=rec.topic_id,
-                            year=week.year,
-                            week_num=week.week_number,
-                            day_number=target_day.day_number,
-                            recurring_id=rec.id,
-                            task_type=rec.task_type
-                        )
-                        new_task.created_at = target_date
-                        existing_rec_tasks.append(new_task)
-                        injected_count += 1
-
-            elif rec.recurrence_type == "week_tasks":
-                # Cada N semanas en Tareas de la Semana (sin día fijo)
-                if (week.week_number - rec.base_week) % rec.interval_weeks == 0:
-                    try:
-                        target_date = datetime.fromisocalendar(week.year, week.week_number, 1).strftime("%Y-%m-%d")
-                    except Exception:
-                        target_date = datetime.now().strftime("%Y-%m-%d")
-
-                    already_in_week = any(
-                        (self.tasks.get(tid) and (self.tasks[tid].recurring_id == rec.id or self.tasks[tid].title == rec.title))
-                        for tid in week.week_task_ids
-                    )
-                    if already_in_week:
-                        continue
-
-                    if existing_rec_tasks:
-                        task = existing_rec_tasks[0]
-                        if task.id in week.week_task_ids or any(task.id in d.task_ids for d in week.days):
-                            continue
-
-                        task.status = "pending"
-                        task.completed_at = None
-                        task.created_at = target_date
-                        task.task_type = rec.task_type
-                        if rec.project_id and (not task.project_id or task.project_id == "POR_ASIGNAR"):
-                            task.project_id = rec.project_id
-                        task.topic_id = rec.topic_id
-                        task.recurring_id = rec.id
-                        week.week_task_ids.append(task.id)
-                        injected_count += 1
-                    else:
-                        new_task = self.create_task(
-                            title=rec.title,
-                            project_id=rec.project_id,
-                            topic_id=rec.topic_id,
-                            is_week_task=True,
-                            year=week.year,
-                            week_num=week.week_number,
-                            recurring_id=rec.id,
-                            task_type=rec.task_type
-                        )
-                        new_task.created_at = target_date
-                        existing_rec_tasks.append(new_task)
-                        injected_count += 1
-
-        if injected_count > 0:
-            self.save_tasks()
-            self.save_week(week)
-
-        return injected_count
+        from brackets.services.recurring_task_service import RecurringTaskService
+        return RecurringTaskService(self).apply_recurring_tasks(week)
 
     def deduplicate_tasks(self) -> Tuple[int, int]:
         """
         Desduplica tareas en tasks.yaml y reasigna los IDs en todos los archivos de semanas.
-        - Para tareas recurrentes multidía (como Daily S^3 con N días en la semana):
-          mantiene exactamente N instancias canónicas (1 por slot de día) y fusiona las demás.
-        - Para tareas recurrentes de 1 día: mantiene 1 instancia canónica.
-        - Para tareas no recurrentes repetidas por arrastre: mantiene 1 instancia canónica
-          (priorizando la que esté completada, con proyecto asignado o con menor ID).
-        - Reemplaza las referencias a tareas redundantes en data/weeks/*.yaml.
-        - Elimina las entidades duplicadas de self.tasks y guarda cambios en disco.
-        Devuelve (total_reemplazos, total_tareas_eliminadas).
+        Delega en TaskDeduplicationService para mantener separación modular de responsabilidades.
         """
-        replacement_map: Dict[str, str] = {}
-
-        # 1. Tareas Recurrentes
-        for rec in self.recurring_tasks.values():
-            if rec.recurrence_type == "weekly_days":
-                k = len(rec.days_of_week) if rec.days_of_week else 1
-            else:
-                k = 1
-
-            matching = [
-                t for t in self.tasks.values()
-                if t.recurring_id == rec.id or (not t.recurring_id and t.title == rec.title)
-            ]
-            matching.sort(key=lambda x: (0 if x.recurring_id == rec.id else 1, x.id))
-
-            canonicals = matching[:k]
-            for c in canonicals:
-                c.recurring_id = rec.id
-                if rec.project_id and (not c.project_id or c.project_id == "POR_ASIGNAR"):
-                    c.project_id = rec.project_id
-
-            for idx, extra in enumerate(matching[k:]):
-                slot_idx = idx % k
-                canonical_slot = canonicals[slot_idx]
-                replacement_map[extra.id] = canonical_slot.id
-                if canonical_slot.is_pending and (extra.is_done or extra.is_cancelled):
-                    canonical_slot.status = extra.status
-                    canonical_slot.completed_at = extra.completed_at
-
-        # 2. Tareas No Recurrentes
-        from collections import defaultdict
-        non_rec_tasks = [
-            t for t in self.tasks.values()
-            if t.id not in replacement_map and not t.recurring_id
-        ]
-        groups = defaultdict(list)
-        for t in non_rec_tasks:
-            key = t.title.strip()
-            groups[key].append(t)
-
-        for title, group in groups.items():
-            if len(group) > 1:
-                group.sort(key=lambda x: (
-                    0 if x.is_done else 1,
-                    0 if x.project_id and x.project_id != "POR_ASIGNAR" else 1,
-                    x.id
-                ))
-                canonical = group[0]
-                if not canonical.project_id or canonical.project_id == "POR_ASIGNAR":
-                    for other in group[1:]:
-                        if other.project_id and other.project_id != "POR_ASIGNAR":
-                            canonical.project_id = other.project_id
-                            break
-
-                for extra in group[1:]:
-                    replacement_map[extra.id] = canonical.id
-
-        if not replacement_map:
-            return (0, 0)
-
-        # 3. Reasignar en todos los archivos de semanas
-        import glob
-        week_files = sorted(glob.glob(os.path.join(self.weeks_dir, "*.yaml")))
-        for wpath in week_files:
-            match = re.search(r'(\d{4})-W(\d{2})\.yaml$', os.path.basename(wpath))
-            if not match:
-                continue
-            year = int(match.group(1))
-            week_num = int(match.group(2))
-            week = self.load_week(year, week_num, reload=True)
-            if not week:
-                continue
-
-            changed = False
-            new_week_task_ids = []
-            for tid in week.week_task_ids:
-                new_id = replacement_map.get(tid, tid)
-                if new_id not in new_week_task_ids:
-                    new_week_task_ids.append(new_id)
-                if new_id != tid:
-                    changed = True
-            week.week_task_ids = new_week_task_ids
-
-            new_topics_task_ids = []
-            for tid in week.topics_task_ids:
-                new_id = replacement_map.get(tid, tid)
-                if new_id not in new_topics_task_ids:
-                    new_topics_task_ids.append(new_id)
-                if new_id != tid:
-                    changed = True
-            week.topics_task_ids = new_topics_task_ids
-
-            for d in week.days:
-                new_day_task_ids = []
-                for tid in d.task_ids:
-                    new_id = replacement_map.get(tid, tid)
-                    if new_id not in new_day_task_ids:
-                        new_day_task_ids.append(new_id)
-                    if new_id != tid:
-                        changed = True
-                d.task_ids = new_day_task_ids
-
-            if changed:
-                self.save_week(week)
-
-        # 4. Eliminar tareas obsoletas de self.tasks
-        removed_count = 0
-        for old_id, canonical_id in replacement_map.items():
-            if old_id != canonical_id and old_id in self.tasks:
-                del self.tasks[old_id]
-                removed_count += 1
-
-        self.save_tasks()
-        return (len(replacement_map), removed_count)
+        from brackets.services.task_deduplication_service import TaskDeduplicationService
+        return TaskDeduplicationService(self).deduplicate_tasks()
 
     # -------------------------------------------------------------------------
     # Métodos de Negocio: Tareas
@@ -897,7 +580,8 @@ class EntityManager:
         topic_id: Optional[str] = None,
         is_week_task: bool = False,
         recurring_id: Optional[str] = None,
-        task_type: str = "task"
+        task_type: str = "task",
+        description: Optional[str] = None
     ) -> Task:
         """Crea una tarea, la registra en la tabla y opcionalmente la vincula a la semana/día."""
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -918,7 +602,8 @@ class EntityManager:
             project_id=project_id,
             topic_id=topic_id,
             recurring_id=recurring_id,
-            task_type=task_type
+            task_type=task_type,
+            description=description.strip() if description else None
         )
 
         self.tasks[task_id] = task
@@ -1089,9 +774,11 @@ class EntityManager:
     def ensure_jira_definition(
         self,
         ticket_code: str,
-        base_url: str = "https://mangospain.atlassian.net/browse/"
+        base_url: Optional[str] = None
     ) -> Definition:
-        """Normaliza un ticket de Jira (ej: ATLM-12703 -> [🎫ATLM-12703]) y asegura su URL."""
+        """Normaliza un ticket de Jira (ej: PROJ-1234 -> [🎫PROJ-1234]) y asegura su URL."""
+        if base_url is None:
+            base_url = getattr(self, "jira_base_url", "https://jira.atlassian.net/browse/")
         clean_code = ticket_code.replace("[", "").replace("]", "").replace("🎫", "").strip()
         formatted_id = f"[🎫{clean_code}]"
         full_url = f"{base_url}{clean_code}"
@@ -1101,7 +788,7 @@ class EntityManager:
     # Métodos de Negocio: Personas (@menciones)
     # -------------------------------------------------------------------------
     def _split_camel_case_name(self, text: str) -> str:
-        """Convierte DidacAlbi en 'Didac Albi' o IvanMuñoz en 'Ivan Muñoz'."""
+        """Convierte NombreApellido en 'Nombre Apellido'."""
         clean = text.lstrip("@").strip()
         parts = re.findall(r'[A-ZÁÉÍÓÚÑ][a-záéíóúñ0-9_-]*', clean)
         if parts and "".join(parts) == clean:
@@ -1403,20 +1090,67 @@ class EntityManager:
 
         return True
 
-    def get_project_stats(self, project_id: str) -> Dict[str, int]:
-        """Calcula al vuelo estadísticas de tareas e ideas de un proyecto."""
+    def get_project_stats(self, project_id: str) -> Dict[str, Any]:
+        """Calcula al vuelo estadísticas completas de tareas e ideas de un proyecto."""
         tasks = [t for t in self.tasks.values() if t.project_id == project_id]
         ideas = [i for i in self.ideas.values() if i.project_id == project_id]
         total = len(tasks)
         done = len([t for t in tasks if t.is_done])
         pending = len([t for t in tasks if t.is_pending])
+        cancelled = len([t for t in tasks if t.is_cancelled])
+        scheduled = self.get_scheduled_task_ids()
+        backlog = len([t for t in tasks if t.is_pending and t.id not in scheduled])
+        scheduled_count = pending - backlog
+        active_total = total - cancelled
+        completion_rate = round((done / active_total * 100), 1) if active_total > 0 else 0.0
         evaluating_ideas = len([i for i in ideas if i.status == "evaluating"])
+        accepted_ideas = len([i for i in ideas if i.status == "accepted"])
+        discarded_ideas = len([i for i in ideas if i.status == "discarded"])
         return {
             "total_tasks": total,
             "done_tasks": done,
             "pending_tasks": pending,
+            "cancelled_tasks": cancelled,
+            "backlog_tasks": backlog,
+            "scheduled_tasks": scheduled_count,
+            "completion_rate": completion_rate,
             "total_ideas": len(ideas),
-            "evaluating_ideas": evaluating_ideas
+            "evaluating_ideas": evaluating_ideas,
+            "accepted_ideas": accepted_ideas,
+            "discarded_ideas": discarded_ideas,
+        }
+
+    def get_all_projects_metrics(self) -> Dict[str, Any]:
+        """Calcula un resumen consolidado de métricas para todos los proyectos y el backlog global."""
+        projects = self.list_projects()
+        project_metrics = {}
+        for p in projects:
+            project_metrics[p.id] = {
+                "project": p,
+                "stats": self.get_project_stats(p.id)
+            }
+
+        scheduled = self.get_scheduled_task_ids()
+        all_backlog_tasks = [t for t in self.tasks.values() if t.is_pending and t.id not in scheduled]
+        unassigned_backlog = [t for t in all_backlog_tasks if not t.project_id or t.project_id == "POR_ASIGNAR"]
+
+        total_tasks = len(self.tasks)
+        total_done = len([t for t in self.tasks.values() if t.is_done])
+        total_pending = len([t for t in self.tasks.values() if t.is_pending])
+        total_cancelled = len([t for t in self.tasks.values() if t.is_cancelled])
+        active_tasks = total_tasks - total_cancelled
+        global_completion = round((total_done / active_tasks * 100), 1) if active_tasks > 0 else 0.0
+
+        return {
+            "projects": project_metrics,
+            "total_projects": len(projects),
+            "total_tasks": total_tasks,
+            "total_done": total_done,
+            "total_pending": total_pending,
+            "total_cancelled": total_cancelled,
+            "total_backlog": len(all_backlog_tasks),
+            "unassigned_backlog": len(unassigned_backlog),
+            "global_completion_rate": global_completion,
         }
 
     # -------------------------------------------------------------------------

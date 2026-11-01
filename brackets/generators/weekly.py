@@ -172,8 +172,24 @@ class WeeklyGenerator:
         if weight:
             print(f"⚖️ Peso actual registrado: {weight}")
 
+    def _get_days_per_week(self) -> int:
+        """Determina el número de días por semana según configuración o tipo de vault."""
+        config_path = os.path.join(self.directory, "data", "config.yaml")
+        if os.path.exists(config_path):
+            try:
+                import yaml
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    if "days_per_week" in cfg:
+                        return int(cfg["days_per_week"])
+                    if str(cfg.get("vault_type", "")).strip().lower() == "personal":
+                        return 7
+            except Exception:
+                pass
+        return 5
+
     def _calculate_next_week_dates_iso(self, year: int, week: int) -> List[datetime]:
-        """Calcula lunes-viernes de la siguiente semana usando calendario ISO.
+        """Calcula los días de la siguiente semana usando calendario ISO.
 
         Esta ruta evita depender de encabezados diarios parseados del archivo,
         que pueden variar por emojis/ediciones manuales y provocar saltos de día.
@@ -189,7 +205,8 @@ class WeeklyGenerator:
             # Avanzamos al primer día del año siguiente
             next_monday = datetime.fromisocalendar(year + 1, 1, 1)
 
-        return [next_monday + timedelta(days=i) for i in range(5)]
+        days_count = self._get_days_per_week()
+        return [next_monday + timedelta(days=i) for i in range(days_count)]
 
     def create_manual_weekly_bitacora(self) -> bool:
         """Crea una bitácora semanal de forma manual sin necesidad de archivo previo."""
@@ -244,10 +261,16 @@ class WeeklyGenerator:
         print("  3 = 🏖️ Vacaciones/Festivo")
         print("-" * 40)
 
-        work_locations = {}
-        weekdays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
-        day_emoji_map = {0: 29, 1: 30, 2: 31, 3: 1, 4: 2}  # Números de día genéricos
+        days_count = self._get_days_per_week()
+        weekdays_all = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        weekdays = weekdays_all[:days_count]
+        try:
+            target_monday = datetime.fromisocalendar(year, week, 1)
+            day_emoji_map = {i: (target_monday + timedelta(days=i)).day for i in range(days_count)}
+        except Exception:
+            day_emoji_map = {i: (29 + i) for i in range(days_count)}
 
+        work_locations = {}
         for i, day in enumerate(weekdays):
             while True:
                 location = input(f"{day} ({day_emoji_map[i]}): (1/2/3 o emoji): ").strip()
@@ -270,7 +293,8 @@ class WeeklyGenerator:
             month=month,
             week=week,
             weight=weight,
-            work_locations=work_locations
+            work_locations=work_locations,
+            days_count=days_count
         )
 
         if not content:

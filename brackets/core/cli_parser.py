@@ -22,6 +22,7 @@ Ejemplos de uso:
   python main.py --consolidate-year 2025    # Consolidar año completo
   python main.py --list                     # Listar archivos recientes
   python main.py --debug                    # Información de debug
+  python main.py --web                      # Iniciar Brackets Web Hub (PWA + REST API)
         """,
     )
 
@@ -66,6 +67,12 @@ Ejemplos de uso:
     )
 
     parser.add_argument(
+        "--timer-gui",
+        action="store_true",
+        help="Abrir Pomodoro Timer en ventana retro con Tomatín",
+    )
+
+    parser.add_argument(
         "--consolidate",
         "-c",
         metavar="YYYY-MM",
@@ -89,6 +96,25 @@ Ejemplos de uso:
         "--debug",
         action="store_true",
         help="Mostrar información de debug",
+    )
+
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Iniciar Brackets Web Hub (interfaz PWA y API REST)",
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Puerto para Brackets Web Hub (por defecto: 8080)",
+    )
+
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="No abrir automáticamente el navegador al iniciar --web",
     )
 
     parser.add_argument(

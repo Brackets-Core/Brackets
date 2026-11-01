@@ -3,8 +3,8 @@
 import os
 import shutil
 import tempfile
+import unittest
 from datetime import datetime
-import pytest
 
 from brackets.managers.entity_manager import EntityManager
 from brackets.managers.settings_manager import SettingsManager
@@ -13,16 +13,16 @@ from brackets.models.entities import WeekSchedule, DaySchedule
 from brackets.generators.bitacora_renderer import BitacoraRenderer
 
 
-class TestSyncDayLocationAndHolidays:
-    @pytest.fixture(autouse=True)
-    def setup_teardown(self):
+class TestSyncDayLocationAndHolidays(unittest.TestCase):
+    def setUp(self):
         self.test_dir = tempfile.mkdtemp()
         self.data_dir = os.path.join(self.test_dir, "data")
         os.makedirs(os.path.join(self.data_dir, "tables"), exist_ok=True)
         os.makedirs(os.path.join(self.data_dir, "weeks"), exist_ok=True)
         self.em = EntityManager(self.data_dir)
         self.sm = SettingsManager(self.test_dir)
-        yield
+
+    def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_reconcile_preserves_day_emoji_and_note_from_markdown(self):
@@ -68,12 +68,12 @@ class TestSyncDayLocationAndHolidays:
         # Verificar que el día en week ahora tiene 🏖️ y "Compensación Deploy"
         reloaded = self.em.load_week(2026, 39, reload=True)
         day_25 = next(d for d in reloaded.days if d.day_number == 25)
-        assert day_25.location_emoji == "🏖️"
-        assert day_25.location_note == "Compensación Deploy"
+        self.assertEqual(day_25.location_emoji, "🏖️")
+        self.assertEqual(day_25.location_note, "Compensación Deploy")
 
         # Verificar que al renderizar el markdown limpio, se mantiene el encabezado correcto
         rendered = BitacoraRenderer.render_week(reloaded, self.em)
-        assert "## 🏖️25 (Compensación Deploy)" in rendered
+        self.assertIn("## 🏖️25 (Compensación Deploy)", rendered)
 
     def test_apply_calendar_to_week_updates_days(self):
         # Configurar en work_calendar.yaml la vacación para 2026-09-25
@@ -92,6 +92,10 @@ class TestSyncDayLocationAndHolidays:
         )
 
         changed = self.em.apply_calendar_to_week(week, self.sm)
-        assert changed is True
-        assert day.location_emoji == "🏖️"
-        assert day.location_note == "Compensación Deploy"
+        self.assertTrue(changed)
+        self.assertEqual(day.location_emoji, "🏖️")
+        self.assertEqual(day.location_note, "Compensación Deploy")
+
+
+if __name__ == "__main__":
+    unittest.main()

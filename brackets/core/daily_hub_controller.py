@@ -14,7 +14,8 @@ from brackets.models.entities import WeekSchedule, DaySchedule, Task, Note
 from brackets.managers.entity_manager import EntityManager
 from brackets.generators.bitacora_renderer import BitacoraRenderer
 from brackets.utils.legacy_utils import generate_filename
-from brackets.core.menu_navigator import MenuNavigator, MenuOption
+from brackets.core.menu_navigator import MenuNavigator, MenuOption, KEY_ENTER, KEY_ESC
+from brackets.core.menu_engine import MenuEngine
 
 
 class DailyHubController:
@@ -27,11 +28,13 @@ class DailyHubController:
         input_fn: Callable[[str], str] = input,
         print_fn: Callable[..., None] = print,
         read_single_key_fn: Optional[Callable[[str], str]] = None,
-        clear_screen_fn: Optional[Callable[[], None]] = None
+        clear_screen_fn: Optional[Callable[[], None]] = None,
+        menu_engine: Optional[MenuEngine] = None,
     ):
         self.vault_root = os.path.abspath(vault_root)
         self.data_dir = os.path.join(self.vault_root, "data")
         self.notes_root = self.vault_root
+        self.menu_engine = menu_engine or MenuEngine(self.vault_root)
         self.input = input_fn
         self.print = print_fn
         if read_single_key_fn is not None:
@@ -61,6 +64,20 @@ class DailyHubController:
 
         from brackets.managers.settings_manager import get_global_settings_manager
         self.settings = get_global_settings_manager(self.vault_root)
+        self.vault_type = self._get_vault_type()
+
+    def _get_vault_type(self) -> str:
+        """Determina el tipo de vault configurado ('work', 'personal', 'project')."""
+        config_path = os.path.join(self.vault_root, "data", "config.yaml")
+        if os.path.exists(config_path):
+            try:
+                import yaml
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                    return str(data.get("vault_type", "work")).strip().lower()
+            except Exception:
+                pass
+        return "work"
 
     def _get_active_week_and_day(self) -> Tuple[Optional[WeekSchedule], Optional[DaySchedule]]:
         """Determina la semana y el día activo para la jornada actual."""
@@ -136,7 +153,7 @@ class DailyHubController:
             return None
 
         if p_choice == "+":
-            new_pid = self.input("Código del nuevo proyecto (ej: AMR_LOGISTICS): ").strip()
+            new_pid = self.input("Código del nuevo proyecto (ej: PROJ_ALPHA): ").strip()
             if new_pid:
                 new_pname = self.input(f"Nombre descriptivo para '{new_pid}': ").strip()
                 p_obj = self.manager.ensure_project(new_pid, name=new_pname)
@@ -199,7 +216,7 @@ class DailyHubController:
         if choice == "+":
             sub_choice = self.input("¿Crear [t] Topic o [p] Proyecto?: ").strip().lower()
             if sub_choice.startswith("p"):
-                new_pid = self.input("Código del nuevo proyecto (ej: AMR_LOGISTICS): ").strip()
+                new_pid = self.input("Código del nuevo proyecto (ej: PROJ_ALPHA): ").strip()
                 if new_pid:
                     new_pname = self.input(f"Nombre descriptivo para '{new_pid}': ").strip()
                     p_obj = self.manager.ensure_project(new_pid, name=new_pname)
@@ -234,7 +251,12 @@ class DailyHubController:
 
         return None, None
 
-    def render_dashboard(self, week: WeekSchedule, day: DaySchedule) -> List[str]:
+    def render_dashboard(
+        self,
+        week: WeekSchedule,
+        day: DaySchedule,
+        highlighted_task_idx: Optional[int] = None
+    ) -> List[str]:
         """Imprime la pantalla del Hub Diario y devuelve los IDs de tareas mostradas en orden."""
         self.clear_screen()
         today_tasks: List[Task] = []
@@ -259,7 +281,8 @@ class DailyHubController:
         self.print("=" * 65)
 
         if week.topic_ids:
-            self.print("🎯 TOPICS DE LA SEMANA:")
+            topic_title = "🎯 OBJETIVOS DE LA SEMANA:" if self.vault_type == "personal" else "🎯 TOPICS DE LA SEMANA:"
+            self.print(topic_title)
             for tid in week.topic_ids:
                 top = self.manager.topics.get(tid)
                 if top:
@@ -267,14 +290,24 @@ class DailyHubController:
                     self.print(f"  • {top.title}{proj_tag}")
             self.print("-" * 65)
 
-        self.print("📋 TAREAS Y REUNIONES DE HOY:")
+        task_section_title = "🌱 TAREAS Y HÁBITOS DE HOY:" if self.vault_type == "personal" else "📋 TAREAS Y REUNIONES DE HOY:"
+        self.print(task_section_title)
         if today_tasks:
             for idx, task in enumerate(today_tasks, start=1):
                 status_box = "[x]" if task.is_done else ("[ ] ~~" if task.is_cancelled else "[ ]")
                 suffix = "~~" if task.is_cancelled else ""
                 proj_tag = f" [{task.project_id}]" if task.project_id else ""
                 type_icon = f"{task.premoji} " if task.premoji else ""
-                self.print(f"  [{idx}] {status_box} {type_icon}{task.title}{proj_tag}{suffix}")
+                line_str = f"[{idx}] {status_box} {type_icon}{task.title}{proj_tag}{suffix}"
+
+                if highlighted_task_idx == idx:
+                    self.print(f"👉 {line_str}")
+                else:
+                    self.print(f"   {line_str}")
+                if task.description:
+                    for d_line in task.description.splitlines():
+                        if d_line.strip():
+                            self.print(f"       💬 {d_line.strip()}")
         else:
             self.print("  (No hay tareas asignadas para este día)")
 
@@ -288,6 +321,10 @@ class DailyHubController:
                 proj_tag = f" [{t.project_id}]" if t.project_id else ""
                 type_icon = f"{t.premoji} " if t.premoji else ""
                 self.print(f"  ⏳ {type_icon}{t.title}{proj_tag}")
+                if t.description:
+                    for d_line in t.description.splitlines():
+                        if d_line.strip():
+                            self.print(f"       💬 {d_line.strip()}")
 
         self.print("\n📝 NOTAS DE LA SEMANA:")
         rendered_notes = 0
@@ -334,9 +371,20 @@ class DailyHubController:
             self.print(f"\n⚡ Fin de semana detectado: pulsa [+] para activar {day_name} {now.day} (Intervención/Guardia)")
 
         self.print("\n" + "=" * 65)
-        self.print("  [1-9] ✅ Marcar tarea   [x] ❌ Tachar tarea   [t] 📋 Tareas   [n] 📝 Notas")
-        self.print("  [p] 📁 Proyectos        [d] 📅 Cambiar día    [l] 🔗 Defs     [k] 🍅 Pomodoro")
-        self.print("  [y] 🔄 Sync             [0/b] Menú            [q] Salir")
+        if highlighted_task_idx is not None and 1 <= highlighted_task_idx <= len(today_tasks):
+            sel_task = today_tasks[highlighted_task_idx - 1]
+            title_disp = (sel_task.title[:45] + "...") if len(sel_task.title) > 48 else sel_task.title
+            self.print(f"🎯 ACCIONES PARA [{highlighted_task_idx}]: \"{title_disp}\"")
+            self.print("=" * 65)
+            self.print("  [1/Enter] ✅ Marcar como completada (o desmarcar)")
+            self.print("  [2]       ❌ Tachar (Desconvocada / Cancelada)")
+            self.print("  [3]       📁 Asignar a Proyecto o Topic")
+            self.print("  [4]       🗑️  Eliminar tarea de la bitácora")
+            self.print("  [0/Esc]   ↩️  Volver al Hub")
+        else:
+            self.print("  [1-9] 🎯 Seleccionar tarea   [t] 📋 Tareas   [n] 📝 Notas")
+            self.print("  [p] 📁 Proyectos             [d] 📅 Cambiar día   [l] 🔗 Defs")
+            self.print("  [k] 🍅 Pomodoro              [y] 🔄 Sync          [0/b] Menú   [q] Salir")
         self.print("=" * 65)
 
         return ordered_task_ids
@@ -398,17 +446,55 @@ class DailyHubController:
         self.input("\nPresiona Enter para continuar...")
 
     def _action_run_pomodoro(self, week: WeekSchedule, day: DaySchedule) -> None:
-        """Inicia el temporizador Pomodoro con las tareas de la jornada activa."""
-        from brackets.modules.pomodoro_timer import run_pomodoro_standalone
-        run_pomodoro_standalone(
-            base_dir=self.vault_root,
-            event_log=getattr(self, "_event_log", None),
-            entity_manager=self.manager,
-            current_week=week,
-            current_day=day,
-            input_fn=self.input,
-            print_fn=self.print,
-        )
+        """Inicia el temporizador Pomodoro (versión Retro con Tomatín por defecto)."""
+        ui_mode = "retro"
+        try:
+            from brackets.managers.settings_manager import SettingsManager
+            cfg = SettingsManager(self.vault_root).load_config()
+            pomo_cfg = cfg.get("pomodoro", {})
+            if isinstance(pomo_cfg, dict):
+                ui_mode = pomo_cfg.get("ui_mode", "retro")
+            elif cfg.get("feature_flags", {}).get("pomodoro_retro") is False:
+                ui_mode = "console"
+        except Exception:
+            ui_mode = "retro"
+
+        # Si se configuró expresamente 'console' o en tests no interactivos con input mockeado:
+        if ui_mode == "console" or (self.input is not input and ui_mode != "force_retro"):
+            from brackets.modules.pomodoro_timer import run_pomodoro_standalone
+            run_pomodoro_standalone(
+                base_dir=self.vault_root,
+                event_log=getattr(self, "_event_log", None),
+                entity_manager=self.manager,
+                current_week=week,
+                current_day=day,
+                input_fn=self.input,
+                print_fn=self.print,
+            )
+        else:
+            try:
+                from brackets.modules.pomodoro_retro_ui import launch_retro_pomodoro
+                self.print("\n🍅 Abriendo Pomodoro Retro (Tomatín)...")
+                launch_retro_pomodoro(
+                    vault_dir=self.vault_root,
+                    event_log=getattr(self, "_event_log", None),
+                    entity_manager=self.manager,
+                    current_week=week,
+                    current_day=day,
+                )
+            except Exception as ex:
+                self.print(f"⚠️ No se pudo iniciar la interfaz retro ({ex}). Abriendo versión consola...")
+                from brackets.modules.pomodoro_timer import run_pomodoro_standalone
+                run_pomodoro_standalone(
+                    base_dir=self.vault_root,
+                    event_log=getattr(self, "_event_log", None),
+                    entity_manager=self.manager,
+                    current_week=week,
+                    current_day=day,
+                    input_fn=self.input,
+                    print_fn=self.print,
+                )
+
         reloaded_week = self.manager.load_week(week.year, week.week_number, reload=True)
         if reloaded_week:
             self._sync_markdown(reloaded_week)
@@ -506,11 +592,11 @@ class DailyHubController:
                     return "exit"
                 continue
 
-            # Atajo directo: Marcar/desmarcar tarea de hoy por número (1..N)
+            # Atajo directo: Selección contextual de tarea por número (1..N)
             if choice.isdigit() and choice != "0":
                 task_num = int(choice)
                 if 1 <= task_num <= len(ordered_task_ids):
-                    self._action_toggle_task(week, day, ordered_task_ids, target_num=task_num)
+                    self._handle_selected_task_menu(week, day, ordered_task_ids, task_num)
                     continue
 
             if choice == "c":
@@ -549,7 +635,7 @@ class DailyHubController:
 
     def manage_tasks_menu(self, week: WeekSchedule, day: DaySchedule, ordered_task_ids: List[str]) -> Optional[str]:
         """Subpantalla interactiva de gestión de tareas con MenuNavigator (Opción B)."""
-        options = [
+        default_options = [
             MenuOption("1", "➕ Nueva Tarea HOY", "new_task", aliases=["n"]),
             MenuOption("2", "🎫 Tarea Jira HOY", "jira_task", aliases=["j"]),
             MenuOption("3", "✅ Marcar Tarea (completar / reactivar)", "toggle_task", aliases=["c", "m"]),
@@ -564,8 +650,16 @@ class DailyHubController:
             MenuOption("12", "🍅 Iniciar Pomodoro Timer", "run_pomodoro", aliases=["k", "pomo"]),
             MenuOption("13", "❌ Cancelar / Tachar Tarea (conservar en tabla)", "cancel_task", aliases=["x", "cancel"]),
         ]
+        options = self.menu_engine.get_menu_options("daily_tasks", default_options=default_options)
 
-        title = f"📋 G E S T I Ó N  D E  T A R E A S  (Día {day.day_number})"
+        base_title = self.menu_engine.menu_title("daily_tasks", f"📋 G E S T I Ó N  D E  T A R E A S  (Día {day.day_number})")
+        if "{day}" in base_title:
+            title = base_title.replace("{day}", str(day.day_number))
+        elif f"(Día {day.day_number})" not in base_title:
+            title = f"{base_title} (Día {day.day_number})"
+        else:
+            title = base_title
+
         navigator = MenuNavigator(
             title=title,
             options=options,
@@ -589,6 +683,9 @@ class DailyHubController:
             if opt:
                 if opt.action_id == "new_task":
                     self._action_new_task(week, day)
+                    return "refresh"
+                elif opt.action_id == "new_habit":
+                    self._action_new_habit(week, day)
                     return "refresh"
                 elif opt.action_id == "jira_task":
                     self._action_jira_task(week, day)
@@ -643,12 +740,13 @@ class DailyHubController:
                 f"day_{d.day_number}",
                 aliases=[str(d.day_number)]
             ))
-        options.append(MenuOption(
-            "+",
-            "🛠️ Activar Guardia / Intervención Fin de Semana",
-            "add_day",
-            aliases=["intervencion", "guardia"]
-        ))
+        if self.vault_type != "personal" or len(week.days) < 7:
+            options.append(MenuOption(
+                "+",
+                "🛠️ Activar Guardia / Intervención Fin de Semana",
+                "add_day",
+                aliases=["intervencion", "guardia"]
+            ))
 
         navigator = MenuNavigator(
             title=f"📅 S E L E C C I Ó N  D E  D Í A  (Semana W{week.week_number:02d} / {week.year})",
@@ -683,8 +781,15 @@ class DailyHubController:
         text = self.input("📝 Texto de la nueva tarea: ").strip()
         if text:
             from brackets.models.task_types import TaskTypeRegistry
+            from brackets.utils.bitacora_parser import BitacoraMarkdownParser
             task_type, clean_title = TaskTypeRegistry.detect_task_type_and_clean_title(text)
-            proj_id, topic_id = self.prompt_topic_or_project_selection(week)
+            proj_tag, _ = BitacoraMarkdownParser.parse_project_tag(clean_title)
+            if proj_tag:
+                self.manager.ensure_project(proj_tag)
+                proj_id = proj_tag
+                topic_id = None
+            else:
+                proj_id, topic_id = self.prompt_topic_or_project_selection(week)
             self.manager.create_task(
                 title=clean_title,
                 task_type=task_type,
@@ -698,8 +803,27 @@ class DailyHubController:
             self.manager.save_week(week)
             self._sync_markdown(week)
 
+    def _action_new_habit(self, week: WeekSchedule, day: DaySchedule) -> None:
+        text = self.input("🌱 Hábito a registrar HOY (ej: Meditar 10m, Leer 20p, Entrenar): ").strip()
+        if text:
+            if not any(text.lower().startswith(p) for p in ["hábito:", "habito:", "h:"]):
+                text = f"hábito: {text}"
+            from brackets.models.task_types import TaskTypeRegistry
+            task_type, clean_title = TaskTypeRegistry.detect_task_type_and_clean_title(text)
+            self.manager.create_task(
+                title=clean_title,
+                task_type=task_type or "habit",
+                year=week.year,
+                week_num=week.week_number,
+                day_number=day.day_number
+            )
+            self.manager.sort_day_tasks_pending_first(day)
+            self.manager.save_week(week)
+            self._sync_markdown(week)
+            self.print("✅ Hábito registrado para hoy.")
+
     def _action_jira_task(self, week: WeekSchedule, day: DaySchedule) -> None:
-        ticket_code = self.input("🎫 Código Jira (ej: ATLM-12703): ").strip()
+        ticket_code = self.input("🎫 Código Jira (ej: PROJ-1234): ").strip()
         desc = self.input("📝 Descripción de la tarea: ").strip()
         if ticket_code and desc:
             proj_id, topic_id = self.prompt_topic_or_project_selection(week)
@@ -781,45 +905,70 @@ class DailyHubController:
             self.print("❌ Número fuera de rango.")
             self.input("Presiona Enter para continuar...")
 
-    def _action_cancel_task(self, week: WeekSchedule, day: DaySchedule, ordered_task_ids: List[str]) -> None:
+    def _action_cancel_task(
+        self,
+        week: WeekSchedule,
+        day: DaySchedule,
+        ordered_task_ids: List[str],
+        target_num: Optional[int] = None
+    ) -> None:
         if not ordered_task_ids:
             self.print("❌ No hay tareas para cancelar.")
             self.input("Presiona Enter para continuar...")
             return
-        self._print_day_tasks_list(day, ordered_task_ids)
-        num_str = self.input(f"Número de tarea a cancelar/tachar (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
-        if not num_str or num_str in ("0", "b", "c", "q"):
-            return
-        try:
-            num = int(num_str)
-            if 1 <= num <= len(ordered_task_ids):
-                target_id = ordered_task_ids[num - 1]
-                self.manager.cancel_task(target_id)
-                self.manager.sort_day_tasks_pending_first(day)
-                self.manager.save_week(week)
-                self._sync_markdown(week)
-                self.print("✅ Tarea cancelada (tachada con ~~ en la bitácora y conservada en la base de datos).")
+        if target_num is None:
+            self._print_day_tasks_list(day, ordered_task_ids)
+            num_str = self.input(f"Número de tarea a cancelar/tachar (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
+            if not num_str or num_str in ("0", "b", "c", "q"):
+                return
+            try:
+                target_num = int(num_str)
+            except ValueError:
+                self.print("❌ Ingresa un número válido.")
                 self.input("Presiona Enter para continuar...")
-            else:
-                self.print("❌ Número fuera de rango.")
-                self.input("Presiona Enter para continuar...")
-        except ValueError:
-            self.print("❌ Ingresa un número válido.")
+                return
+
+        if 1 <= target_num <= len(ordered_task_ids):
+            target_id = ordered_task_ids[target_num - 1]
+            self.manager.cancel_task(target_id)
+            self.manager.sort_day_tasks_pending_first(day)
+            self.manager.save_week(week)
+            self._sync_markdown(week)
+            self.print("✅ Tarea cancelada (tachada con ~~ en la bitácora y conservada en la base de datos).")
+            self.input("Presiona Enter para continuar...")
+        else:
+            self.print("❌ Número fuera de rango.")
             self.input("Presiona Enter para continuar...")
 
-    def _action_delete_task(self, week: WeekSchedule, day: DaySchedule, ordered_task_ids: List[str]) -> None:
+    def _action_delete_task(
+        self,
+        week: WeekSchedule,
+        day: DaySchedule,
+        ordered_task_ids: List[str],
+        target_num: Optional[int] = None
+    ) -> None:
         if not ordered_task_ids:
             self.print("❌ No hay tareas para borrar.")
             self.input("Presiona Enter para continuar...")
             return
-        self._print_day_tasks_list(day, ordered_task_ids)
-        num_str = self.input(f"Número de tarea a eliminar de la bitácora (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
-        if not num_str or num_str in ("0", "b", "c", "q"):
-            return
-        try:
-            num = int(num_str)
-            if 1 <= num <= len(ordered_task_ids):
-                target_id = ordered_task_ids[num - 1]
+        if target_num is None:
+            self._print_day_tasks_list(day, ordered_task_ids)
+            num_str = self.input(f"Número de tarea a eliminar de la bitácora (1-{len(ordered_task_ids)}) [Enter/0 para cancelar]: ").strip()
+            if not num_str or num_str in ("0", "b", "c", "q"):
+                return
+            try:
+                target_num = int(num_str)
+            except ValueError:
+                self.print("❌ Ingresa un número válido.")
+                self.input("Presiona Enter para continuar...")
+                return
+
+        if 1 <= target_num <= len(ordered_task_ids):
+            target_id = ordered_task_ids[target_num - 1]
+            task = self.manager.tasks.get(target_id)
+            title = task.title if task else target_id
+            confirm = self.input(f"¿Seguro que deseas eliminar '{title}' de la bitácora? (s/N): ").strip().lower()
+            if confirm in ("s", "si", "y", "yes"):
                 self.manager.delete_task(
                     task_id=target_id,
                     year=week.year,
@@ -829,12 +978,69 @@ class DailyHubController:
                 self._sync_markdown(week)
                 self.print("🗑️ Tarea eliminada de la bitácora y de la base de datos.")
                 self.input("Presiona Enter para continuar...")
-            else:
-                self.print("❌ Número fuera de rango.")
-                self.input("Presiona Enter para continuar...")
-        except ValueError:
-            self.print("❌ Ingresa un número válido.")
+        else:
+            self.print("❌ Número fuera de rango.")
             self.input("Presiona Enter para continuar...")
+
+    def _action_assign_task_project(
+        self,
+        week: WeekSchedule,
+        day: DaySchedule,
+        ordered_task_ids: List[str],
+        target_num: int
+    ) -> None:
+        """Asigna o cambia el proyecto/topic de la tarea seleccionada."""
+        if not (1 <= target_num <= len(ordered_task_ids)):
+            return
+        target_id = ordered_task_ids[target_num - 1]
+        task = self.manager.tasks.get(target_id)
+        if not task:
+            return
+
+        self.print(f"\n📁 ASIGNAR PROYECTO A: \"{task.title}\"")
+        curr_proj = f" (Actual: [{task.project_id}])" if task.project_id else " (Sin proyecto actual)"
+        self.print(f"Estado:{curr_proj}")
+        proj_id, topic_id = self.prompt_topic_or_project_selection(week)
+
+        task.project_id = proj_id
+        if topic_id:
+            task.topic_id = topic_id
+
+        self.manager.save_tasks()
+        self.manager.save_week(week)
+        self._sync_markdown(week)
+        p_name = proj_id if proj_id else "General/Ninguno"
+        self.print(f"✅ Tarea vinculada al proyecto [{p_name}].")
+        self.input("Presiona Enter para continuar...")
+
+    def _handle_selected_task_menu(
+        self,
+        week: WeekSchedule,
+        day: DaySchedule,
+        ordered_task_ids: List[str],
+        task_num: int
+    ) -> None:
+        """Muestra la vista con la tarea resaltada y el menú de acciones contextuales."""
+        if not (1 <= task_num <= len(ordered_task_ids)):
+            return
+
+        self.render_dashboard(week, day, highlighted_task_idx=task_num)
+        prompt_msg = "Selecciona acción ([1/Enter] Marcar, [2] Tachar, [3] Asignar, [4] Eliminar, [0] Volver): "
+        if self.read_single_key:
+            act = self.read_single_key(prompt_msg).strip().lower()
+        else:
+            act = self.input(prompt_msg).strip().lower()
+
+        if act in ("", "1", "m", "marcar", "c", "check", "\r", "\n", "enter", "__enter__", KEY_ENTER.lower()):
+            self._action_toggle_task(week, day, ordered_task_ids, target_num=task_num)
+        elif act in ("2", "x", "cancel", "tachar", "cancelar"):
+            self._action_cancel_task(week, day, ordered_task_ids, target_num=task_num)
+        elif act in ("3", "a", "p", "asignar", "proyecto"):
+            self._action_assign_task_project(week, day, ordered_task_ids, target_num=task_num)
+        elif act in ("4", "d", "e", "borrar", "eliminar"):
+            self._action_delete_task(week, day, ordered_task_ids, target_num=task_num)
+        elif act in ("0", "b", "back", "volver", "q", "__esc__", "\x1b", KEY_ESC.lower()):
+            return
 
     def _action_edit_task(
         self,
@@ -944,17 +1150,44 @@ class DailyHubController:
         except ValueError:
             add_num = def_day
 
+        from brackets.managers.settings_manager import SettingsManager
+        loc_options = [("🛠️", "Intervención")]
+        try:
+            sm = SettingsManager(self.vault_root)
+            locations_dict = sm.get_locations()
+            labels = {
+                "home": "Teletrabajo",
+                "office": "Oficina",
+                "remote": "Remoto",
+                "off": "Día libre",
+            }
+            for loc_key, loc_emoji in locations_dict.items():
+                lbl = labels.get(loc_key, loc_key.capitalize())
+                item = (loc_emoji, lbl)
+                if item not in loc_options:
+                    loc_options.append(item)
+        except Exception:
+            loc_options = [
+                ("🛠️", "Intervención"),
+                ("🏠", "Teletrabajo"),
+                ("🚗", "Oficina"),
+            ]
+
         self.print("\nSelecciona ubicación/tipo:")
-        self.print("  [1] 🛠️ Guardia / Intervención")
-        self.print("  [2] 🏠 Teletrabajo")
-        self.print("  [3] 🚗 Oficina / Presencial")
+        for idx, (em, desc) in enumerate(loc_options, start=1):
+            self.print(f"  [{idx}] {em} {desc}")
+
         loc_opt = self.input("Opción (1 por defecto): ").strip()
-        if loc_opt == "2":
-            emoji, note = "🏠", "Teletrabajo"
-        elif loc_opt == "3":
-            emoji, note = "🚗", "Oficina"
-        else:
-            emoji, note = "🛠️", "Intervención"
+        chosen = loc_options[0]
+        if loc_opt:
+            try:
+                opt_idx = int(loc_opt)
+                if 1 <= opt_idx <= len(loc_options):
+                    chosen = loc_options[opt_idx - 1]
+            except ValueError:
+                pass
+
+        emoji, note = chosen[0], chosen[1]
 
         new_day = self.manager.add_day_to_week(
             week=week,
@@ -968,324 +1201,32 @@ class DailyHubController:
         self.input("Presiona Enter para continuar...")
 
     def manage_recurring_menu(self, week: WeekSchedule, day: DaySchedule) -> Optional[str]:
-        """Subpantalla interactiva para gestionar Tareas y Reuniones Recurrentes."""
-        while True:
-            recs = self.manager.list_recurring_tasks(active_only=False)
-            options = [
-                MenuOption("1", "➕ Nueva Tarea / Reunión Recurrente", "new_rec", aliases=["n", "+"]),
-                MenuOption("2", "⏯️  Pausar / Activar Recurrencia", "toggle_rec", aliases=["p", "t"]),
-                MenuOption("3", "🗑️  Eliminar Definición Recurrente", "delete_rec", aliases=["d"]),
-                MenuOption("4", "⚡ Inyectar / Sincronizar en esta semana", "sync_rec", aliases=["s"]),
-            ]
-
-            title = "🔄 G E S T I Ó N  D E  R E C U R R E N T E S  Y  R E U N I O N E S"
-
-            self.clear_screen()
-            self.print("=" * 65)
-            self.print("🔄 TAREAS Y REUNIONES RECURRENTES CONFIGURADAS:")
-            self.print("=" * 65)
-            if recs:
-                wday_names = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
-                for idx, r in enumerate(recs, start=1):
-                    status_lbl = "✅ Activa" if r.active else "⏸️ Pausada"
-                    if r.recurrence_type == "weekly_days":
-                        days_str = ", ".join(wday_names[d] for d in r.days_of_week if 0 <= d <= 6)
-                        pat = f"Días: [{days_str}]"
-                    elif r.recurrence_type == "interval_weeks":
-                        day_lbl = wday_names[r.day_of_week] if 0 <= r.day_of_week <= 6 else "Día"
-                        pat = f"Cada {r.interval_weeks} sem ({day_lbl}, base W{r.base_week})"
-                    else:
-                        pat = "Semanal sin día fijo"
-
-                    proj_lbl = f" [{r.project_id}]" if r.project_id else ""
-                    self.print(f"  [{idx}] {r.title}{proj_lbl} ➔ {pat} | {status_lbl}")
-            else:
-                self.print("  (No hay tareas recurrentes configuradas todavía)")
-            self.print("-" * 65)
-
-            navigator = MenuNavigator(
-                title=title,
-                options=options,
-                show_back=True,
-                show_main_menu=True,
-                print_fn=self.print,
-                input_fn=self.input,
-                read_single_key_fn=self.read_single_key,
-                clear_screen_fn=lambda: None,
-            )
-
-            nav_status, opt = navigator.prompt()
-            if nav_status in ("back", "menu", "exit"):
-                return nav_status
-
-            if opt:
-                if opt.action_id == "new_rec":
-                    self._action_create_recurring(week)
-                elif opt.action_id == "toggle_rec":
-                    self._action_toggle_recurring(recs)
-                elif opt.action_id == "delete_rec":
-                    self._action_delete_recurring(recs)
-                elif opt.action_id == "sync_rec":
-                    count = self.manager.apply_recurring_tasks(week)
-                    if count > 0:
-                        self._sync_markdown(week)
-                        self.print(f"\n✅ Se han inyectado {count} tareas recurrentes en la semana.")
-                    else:
-                        self.print("\nℹ️ Todas las tareas recurrentes ya estaban presentes en la semana.")
-                    self.input("Presiona Enter para continuar...")
-
-    def _action_create_recurring(self, week: WeekSchedule) -> None:
-        title = self.input("\n📝 Título de la reunión o tarea recurrente (ej: Daily S^3): ").strip()
-        if not title:
-            return
-
-        proj_id, topic_id = self.prompt_topic_or_project_selection(week)
-
-        is_meet_guess = any(w in title.lower() for w in ("reunión", "reunion", "daily", "meet", "sync", "cowork", "seguimiento", "review"))
-        self.print("\n¿Qué tipo de elemento es?")
-        self.print("  [1] Reunión (no transiciona entre días si no se realiza)")
-        self.print("  [2] Tarea recurrente")
-        t_type_input = self.input(f"Opción ({'1' if is_meet_guess else '2'} por defecto): ").strip()
-        if not t_type_input:
-            task_type = "meeting" if is_meet_guess else "task"
-        elif t_type_input == "1":
-            task_type = "meeting"
-        else:
-            task_type = "task"
-
-        self.print("\nSelecciona tipo de recurrencia:")
-        self.print("  [1] Días fijos cada semana (ej: Lunes, Miércoles, Viernes)")
-        self.print("  [2] Cada N semanas en día concreto (ej: Viernes cada 4 semanas)")
-        self.print("  [3] Tareas de la Semana (sin día fijo)")
-        t_choice = self.input("Opción (1 por defecto): ").strip()
-
-        if t_choice == "2":
-            interval_str = self.input("¿Cada cuántas semanas? (ej: 4): ").strip()
-            interval = int(interval_str) if interval_str.isdigit() else 4
-            self.print("¿En qué día de la semana? [1] Lunes [2] Martes [3] Miércoles [4] Jueves [5] Viernes")
-            day_choice = self.input("Día (5 por defecto): ").strip()
-            wday_map = {"1": 0, "2": 1, "3": 2, "4": 3, "5": 4}
-            wday = wday_map.get(day_choice, 4)
-            base_w_str = self.input(f"Semana base de inicio ({week.week_number} por defecto): ").strip()
-            base_w = int(base_w_str) if base_w_str.isdigit() else week.week_number
-
-            rec = self.manager.create_recurring_task(
-                title=title,
-                recurrence_type="interval_weeks",
-                interval_weeks=interval,
-                base_week=base_w,
-                day_of_week=wday,
-                project_id=proj_id,
-                topic_id=topic_id,
-                task_type=task_type
-            )
-        elif t_choice == "3":
-            rec = self.manager.create_recurring_task(
-                title=title,
-                recurrence_type="week_tasks",
-                project_id=proj_id,
-                topic_id=topic_id,
-                task_type=task_type
-            )
-        else:
-            self.print("Indica los días separados por comas:")
-            self.print("  Ej: '1,3,5' o 'l,x,v' para Lunes, Miércoles y Viernes")
-            days_input = self.input("Días (1,3,5 por defecto): ").strip().lower()
-            days_list = []
-            if not days_input or "1,3,5" in days_input or "l,x,v" in days_input:
-                days_list = [0, 2, 4]
-            else:
-                for token in days_input.replace(" ", "").split(","):
-                    if token in ("1", "l", "lun", "lunes"):
-                        days_list.append(0)
-                    elif token in ("2", "m", "mar", "martes"):
-                        days_list.append(1)
-                    elif token in ("3", "x", "mie", "miercoles"):
-                        days_list.append(2)
-                    elif token in ("4", "j", "jue", "jueves"):
-                        days_list.append(3)
-                    elif token in ("5", "v", "vie", "viernes"):
-                        days_list.append(4)
-                    elif token in ("6", "s", "sab", "sabado"):
-                        days_list.append(5)
-                    elif token in ("7", "d", "dom", "domingo"):
-                        days_list.append(6)
-            if not days_list:
-                days_list = [0, 2, 4]
-
-            rec = self.manager.create_recurring_task(
-                title=title,
-                recurrence_type="weekly_days",
-                days_of_week=sorted(list(set(days_list))),
-                project_id=proj_id,
-                topic_id=topic_id,
-                task_type=task_type
-            )
-
-        # Aplicar de inmediato a la semana en curso
-        injected = self.manager.apply_recurring_tasks(week)
-        if injected > 0:
-            self._sync_markdown(week)
-        self.print(f"\n✅ Recurrencia '{rec.title}' creada con éxito.")
-        self.input("Presiona Enter para continuar...")
-
-    def _action_toggle_recurring(self, recs: List[Any]) -> None:
-        if not recs:
-            self.print("\n⚠️ No hay recurrencias para pausar o activar.")
-            self.input("Presiona Enter para continuar...")
-            return
-        choice = self.input(f"\nSelecciona número de recurrencia (1-{len(recs)}, 0 para cancelar): ").strip()
-        try:
-            idx = int(choice)
-            if 1 <= idx <= len(recs):
-                target = recs[idx - 1]
-                updated = self.manager.toggle_recurring_task(target.id)
-                if updated:
-                    state_lbl = "activada" if updated.active else "pausada"
-                    self.print(f"✅ Recurrencia '{updated.title}' {state_lbl}.")
-                    self.input("Presiona Enter para continuar...")
-        except ValueError:
-            pass
-
-    def _action_delete_recurring(self, recs: List[Any]) -> None:
-        if not recs:
-            self.print("\n⚠️ No hay recurrencias para eliminar.")
-            self.input("Presiona Enter para continuar...")
-            return
-        choice = self.input(f"\nSelecciona número a eliminar (1-{len(recs)}, 0 para cancelar): ").strip()
-        try:
-            idx = int(choice)
-            if 1 <= idx <= len(recs):
-                target = recs[idx - 1]
-                confirm = self.input(f"¿Seguro que deseas eliminar '{target.title}'? [s/N]: ").strip().lower()
-                if confirm in ("s", "si", "y", "yes"):
-                    self.manager.delete_recurring_task(target.id)
-                    self.print(f"🗑️ Definición '{target.title}' eliminada.")
-                    self.input("Presiona Enter para continuar...")
-        except ValueError:
-            pass
-
-    def manage_definitions_menu(self, week: WeekSchedule) -> Optional[str]:
-        """Subpantalla interactiva para gestionar y crear definiciones/enlaces."""
-        options = [
-            MenuOption("1", "🎫 Nueva Definición Jira (ej: SUPPLY-18495)", "new_jira_def", aliases=["j"]),
-            MenuOption("2", "🔗 Nueva Definición Personalizada (ID + URL)", "new_custom_def", aliases=["c"]),
-            MenuOption("3", "📋 Listar Definiciones registradas", "list_defs", aliases=["l"]),
-            MenuOption("4", "🗑️  Eliminar Definición", "delete_def", aliases=["d"]),
-        ]
-
-        title = "🔗 G E S T I Ó N  D E  D E F I N I C I O N E S  Y  E N L A C E S"
-        navigator = MenuNavigator(
-            title=title,
-            options=options,
-            show_back=True,
-            show_main_menu=True,
-            print_fn=self.print,
+        """Subpantalla interactiva para gestionar Tareas y Reuniones Recurrentes (delegada)."""
+        from brackets.core.recurring_controller import RecurringTasksController
+        controller = RecurringTasksController(
+            manager=self.manager,
+            vault_root=self.vault_root,
             input_fn=self.input,
+            print_fn=self.print,
             read_single_key_fn=self.read_single_key,
             clear_screen_fn=self.clear_screen,
+            sync_markdown_fn=self._sync_markdown,
+            prompt_selection_fn=self.prompt_topic_or_project_selection,
+            menu_engine=self.menu_engine,
         )
+        return controller.manage_recurring_menu(week, day)
 
-        while True:
-            nav_status, opt = navigator.prompt()
-            if nav_status == "back":
-                return "back"
-            if nav_status == "menu":
-                return "menu"
-            if nav_status == "exit":
-                return "exit"
-
-            if opt:
-                if opt.action_id == "new_jira_def":
-                    self._action_new_jira_definition(week)
-                    return "refresh"
-                elif opt.action_id == "new_custom_def":
-                    self._action_new_custom_definition(week)
-                    return "refresh"
-                elif opt.action_id == "list_defs":
-                    self._action_list_definitions()
-                elif opt.action_id == "delete_def":
-                    self._action_delete_definition(week)
-                    return "refresh"
-
-    def _action_new_jira_definition(self, week: WeekSchedule) -> None:
-        code = self.input("🎫 Código del ticket Jira (ej: SUPPLY-18495 o ATLM-12703): ").strip()
-        if not code:
-            return
-        clean_code = code.replace("[", "").replace("]", "").replace("🎫", "").strip().upper()
-        formatted_id = f"[🎫{clean_code}]"
-        default_url = f"https://mangospain.atlassian.net/browse/{clean_code}"
-        url_input = self.input(f"URL [{default_url}] (Enter para aceptar): ").strip()
-        final_url = url_input if url_input else default_url
-
-        def_obj = self.manager.ensure_definition(def_id=formatted_id, url=final_url, title=clean_code)
-        if hasattr(week, "definition_ids") and def_obj.id not in week.definition_ids:
-            week.definition_ids.append(def_obj.id)
-            self.manager.save_week(week)
-        self._sync_markdown(week)
-        self.print(f"\n✅ Definición creada: {def_obj.id}: {def_obj.url}")
-        self.input("Presiona Enter para continuar...")
-
-    def _action_new_custom_definition(self, week: WeekSchedule) -> None:
-        tag = self.input("🏷️  Etiqueta / ID (ej: [🤖Export Validator] o [📊Grafana]): ").strip()
-        if not tag:
-            return
-        if not tag.startswith("[") or not tag.endswith("]"):
-            tag = f"[{tag}]"
-        url = self.input("🌐 URL de destino: ").strip()
-        if not url:
-            self.print("❌ La URL es obligatoria.")
-            self.input("Presiona Enter para continuar...")
-            return
-        title = self.input("📝 Título descriptivo (opcional): ").strip() or None
-
-        def_obj = self.manager.ensure_definition(def_id=tag, url=url, title=title)
-        if hasattr(week, "definition_ids") and def_obj.id not in week.definition_ids:
-            week.definition_ids.append(def_obj.id)
-            self.manager.save_week(week)
-        self._sync_markdown(week)
-        self.print(f"\n✅ Definición creada: {def_obj.id}: {def_obj.url}")
-        self.input("Presiona Enter para continuar...")
-
-    def _action_list_definitions(self) -> None:
-        self.clear_screen()
-        self.print("=" * 65)
-        self.print("🔗 DEFINICIONES Y ENLACES REGISTRADOS")
-        self.print("=" * 65)
-        if not self.manager.definitions:
-            self.print("  (No hay definiciones registradas)")
-        else:
-            for def_id, d in sorted(self.manager.definitions.items()):
-                title_suffix = f" ({d.title})" if d.title else ""
-                self.print(f"  • {d.id}: {d.url}{title_suffix}")
-        self.print("=" * 65)
-        self.input("\nPresiona Enter para continuar...")
-
-    def _action_delete_definition(self, week: WeekSchedule) -> None:
-        if not self.manager.definitions:
-            self.print("❌ No hay definiciones para eliminar.")
-            self.input("Presiona Enter para continuar...")
-            return
-        sorted_keys = sorted(self.manager.definitions.keys())
-        self.print("\nDefiniciones registradas:")
-        for idx, k in enumerate(sorted_keys, start=1):
-            d = self.manager.definitions[k]
-            self.print(f"  [{idx}] {d.id}: {d.url}")
-        num_str = self.input(f"\nNúmero de definición a eliminar (1-{len(sorted_keys)}) [Enter para cancelar]: ").strip()
-        if not num_str:
-            return
-        try:
-            num = int(num_str)
-            if 1 <= num <= len(sorted_keys):
-                target_key = sorted_keys[num - 1]
-                del self.manager.definitions[target_key]
-                self.manager.save_definitions()
-                self._sync_markdown(week)
-                self.print(f"✅ Definición eliminada: {target_key}")
-                self.input("Presiona Enter para continuar...")
-            else:
-                self.print("❌ Número fuera de rango.")
-                self.input("Presiona Enter para continuar...")
-        except ValueError:
-            self.print("❌ Ingresa un número válido.")
-            self.input("Presiona Enter para continuar...")
+    def manage_definitions_menu(self, week: WeekSchedule) -> Optional[str]:
+        """Subpantalla interactiva para gestionar y crear definiciones/enlaces (delegada)."""
+        from brackets.core.definitions_controller import DefinitionsController
+        controller = DefinitionsController(
+            manager=self.manager,
+            vault_root=self.vault_root,
+            input_fn=self.input,
+            print_fn=self.print,
+            read_single_key_fn=self.read_single_key,
+            clear_screen_fn=self.clear_screen,
+            sync_markdown_fn=self._sync_markdown,
+            menu_engine=self.menu_engine,
+        )
+        return controller.manage_definitions_menu(week)

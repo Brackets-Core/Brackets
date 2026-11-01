@@ -87,7 +87,7 @@ class NoteCrudController:
             return None
 
         if p_choice == "+" and not allow_all and allow_none:
-            new_pid = self.input("Código del nuevo proyecto (ej: AMR_LOGISTICS): ").strip()
+            new_pid = self.input("Código del nuevo proyecto (ej: PROJ_ALPHA): ").strip()
             if new_pid:
                 new_pname = self.input(f"Nombre descriptivo para '{new_pid}': ").strip()
                 p_obj = self.manager.ensure_project(new_pid, name=new_pname)

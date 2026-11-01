@@ -77,7 +77,7 @@ class ProjectBacklogController:
             return None
 
         if p_choice == "+" and not allow_all:
-            new_pid = self.input("Código del nuevo proyecto (ej: AMR_LOGISTICS): ").strip()
+            new_pid = self.input("Código del nuevo proyecto (ej: PROJ_ALPHA): ").strip()
             if new_pid:
                 new_pname = self.input(f"Nombre descriptivo para '{new_pid}': ").strip()
                 p_obj = self.manager.ensure_project(new_pid, name=new_pname)
@@ -123,7 +123,14 @@ class ProjectBacklogController:
             self.input("Presiona Enter para continuar...")
             return
 
-        project_id = self.prompt_project_selection()
+        from brackets.utils.bitacora_parser import BitacoraMarkdownParser
+        proj_tag, _ = BitacoraMarkdownParser.parse_project_tag(title)
+        if proj_tag:
+            self.manager.ensure_project(proj_tag)
+            project_id = proj_tag
+        else:
+            project_id = self.prompt_project_selection()
+
         task = self.manager.create_task(title=title, project_id=project_id)
         self._sync_backlog_markdown()
 
@@ -229,10 +236,18 @@ class ProjectBacklogController:
         self.input("\nPresiona Enter para continuar...")
 
     def view_projects_overview(self) -> None:
-        """[4] Muestra resumen de todos los proyectos registrados con estadísticas al vuelo."""
+        """[4] Muestra resumen de todos los proyectos registrados con estadísticas y métricas de backlog."""
         self.print("\n" + "=" * 65)
-        self.print("📂 RESUMEN GENERAL DE PROYECTOS")
+        self.print("📂 RESUMEN GENERAL DE PROYECTOS Y MÉTRICAS DE BACKLOG")
         self.print("=" * 65)
+
+        metrics = self.manager.get_all_projects_metrics()
+        self.print(
+            f"🌐 GLOBAL: {metrics['total_projects']} Proyectos | "
+            f"✅ {metrics['total_done']}/{metrics['total_tasks']} Tareas ({metrics['global_completion_rate']}%) | "
+            f"📋 Backlog: {metrics['total_backlog']} (Sin asignar: {metrics['unassigned_backlog']})"
+        )
+        self.print("-" * 65)
 
         projects = self.manager.list_projects()
         if not projects:
@@ -240,17 +255,23 @@ class ProjectBacklogController:
         else:
             for p in projects:
                 stats = self.manager.get_project_stats(p.id)
+                rate = stats["completion_rate"]
+                bar_len = 10
+                filled = int(rate / 10)
+                bar = "█" * filled + "░" * (bar_len - filled)
+
                 self.print(f"\n📁 [{p.id}] {p.name}")
                 if p.description:
                     self.print(f"   Descripción: {p.description}")
+                self.print(f"   Progreso: [{bar}] {rate}%")
                 self.print(
                     f"   📊 Tareas: {stats['total_tasks']} total | "
                     f"✅ {stats['done_tasks']} hechas | "
-                    f"⏳ {stats['pending_tasks']} pendientes"
+                    f"⏳ {stats['pending_tasks']} activas (📋 {stats['backlog_tasks']} en cola, 📅 {stats['scheduled_tasks']} agendadas)"
                 )
                 self.print(
                     f"   💡 Ideas: {stats['total_ideas']} total | "
-                    f"🟡 {stats['evaluating_ideas']} por evaluar"
+                    f"🟡 {stats['evaluating_ideas']} evaluar | 🟢 {stats['accepted_ideas']} aceptadas"
                 )
 
         self.print("\n" + "-" * 65)

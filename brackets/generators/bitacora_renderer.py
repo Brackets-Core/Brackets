@@ -120,6 +120,7 @@ class BitacoraRenderer:
             if def_obj:
                 definitions_to_render.append(def_obj)
 
+        lines.append("## Definiciones")
         lines.append("<!-- Definiciones -->")
         for d in definitions_to_render:
             lines.append(f"{d.id}: {d.url}")
@@ -133,14 +134,25 @@ class BitacoraRenderer:
 
         formatted_title = TaskTypeRegistry.format_title_with_premoji(task.title, task.task_type)
         if task.is_done:
-            return f"  - [x] {formatted_title}"
+            line = f"  - [x] {formatted_title}"
         elif task.is_cancelled:
             # Si no tiene ya tildes en el título, envolver
             if "~~" not in formatted_title:
-                return f"  - [ ] ~~{formatted_title}~~"
-            return f"  - [ ] {formatted_title}"
+                line = f"  - [ ] ~~{formatted_title}~~"
+            else:
+                line = f"  - [ ] {formatted_title}"
         else:
-            return f"  - [ ] {formatted_title}"
+            line = f"  - [ ] {formatted_title}"
+
+        if task.description:
+            desc_lines = []
+            for d in task.description.splitlines():
+                if d.strip():
+                    desc_lines.append(f"    - {d.strip()}")
+            if desc_lines:
+                return f"{line}\n" + "\n".join(desc_lines)
+
+        return line
 
     @staticmethod
     def _extract_definition_ids(text: str, manager: Optional[EntityManager] = None) -> Set[str]:

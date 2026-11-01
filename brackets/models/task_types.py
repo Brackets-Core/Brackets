@@ -131,6 +131,13 @@ class TaskTypeRegistry:
         """Devuelve la lista de todas las especificaciones registradas."""
         return list(cls._specs.values())
 
+    get_all = get_all_specs
+
+    @classmethod
+    def get_all_specs_dict(cls) -> Dict[str, TaskTypeSpec]:
+        """Devuelve un diccionario con todas las especificaciones registradas indexadas por su clave."""
+        return cls._specs.copy()
+
     @classmethod
     def get_premoji(cls, key: str) -> str:
         """Obtiene el premoji representativo de un tipo de tarea."""

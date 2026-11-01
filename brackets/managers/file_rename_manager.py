@@ -316,7 +316,7 @@ class FileRenameManager:
                 count = content.count(basename)
                 if count > 0:
                     references.append((yaml_file, count))
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
         
         # Buscar en archivos markdown
@@ -336,7 +336,7 @@ class FileRenameManager:
                 count = sum(len(p.findall(content)) for p in patterns)
                 if count > 0:
                     references.append((md_file, count))
-            except:
+            except (OSError, UnicodeDecodeError):
                 pass
         
         return references

@@ -122,6 +122,32 @@ class TestContentParser:
             print(f"❌ Test tareas canceladas no se extraen falló: {e}")
             self.failed += 1
 
+    def test_extract_pending_tasks_ignores_meetings(self):
+        """Test que las reuniones pendientes (con premoji o prefijo Reunión:) no se traspasan."""
+        try:
+            content = """# Week 01
+
+## ✅Topics
+  - [ ] Tarea normal a traspasar
+  - [ ] Reunión: Sincronización semanal
+  - [ ] 🫱🏼‍🫲🏽 Demo cliente
+  - [ ] 🤝 1on1 con lead
+"""
+            parser = ContentParser(content)
+            tasks = parser.extract_pending_tasks()
+            joined = "\n".join(tasks)
+
+            assert "Tarea normal a traspasar" in joined, "Debe incluir tarea normal"
+            assert "Reunión: Sincronización semanal" not in joined, "No debe incluir reunión con prefijo"
+            assert "Demo cliente" not in joined, "No debe incluir reunión con premoji oficial"
+            assert "1on1 con lead" not in joined, "No debe incluir reunión con emoji handshake"
+
+            print("✅ Test: reuniones pendientes no se traspasan a la siguiente semana")
+            self.passed += 1
+        except Exception as e:
+            print(f"❌ Test reuniones pendientes no se traspasan falló: {e}")
+            self.failed += 1
+
     def test_extract_daily_dates(self):
         """Test que extract_daily_dates extrae fechas correctamente."""
         try:
@@ -187,6 +213,7 @@ class TestContentParser:
         self.test_extract_pending_tasks()
         self.test_extract_pending_tasks_ignores_children_of_completed_parent()
         self.test_extract_pending_tasks_ignores_cancelled_tasks()
+        self.test_extract_pending_tasks_ignores_meetings()
         self.test_extract_daily_dates()
         self.test_clean_completed_tasks()
 

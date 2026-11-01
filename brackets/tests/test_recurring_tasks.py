@@ -343,6 +343,39 @@ class TestRecurringTasks(unittest.TestCase):
         fri_tasks = [self.manager.tasks[tid] for tid in friday.task_ids if tid in self.manager.tasks]
         self.assertFalse(any(t.title == "Daily S^3" for t in fri_tasks))
 
+    def test_controller_action_create_recurring(self):
+        """Valida que RecurringTasksController cree una recurrencia interactivamente sin fallar."""
+        from brackets.core.recurring_controller import RecurringTasksController
+        week = self.manager.load_week(2026, 34)
+
+        inputs = [
+            "STANDUP IT",       # Título
+            "1",                # Tipo de elemento (opción 1)
+            "1",                # Tipo recurrencia: días fijos
+            "1,3,5",            # Lunes, Miércoles, Viernes
+            ""                  # Enter continuar
+        ]
+        outputs = []
+        def mock_input(prompt=""):
+            return inputs.pop(0) if inputs else ""
+
+        def mock_prompt_selection(w):
+            return "SOFTWARE", None
+
+        ctrl = RecurringTasksController(
+            manager=self.manager,
+            vault_root=self.tmp_dir,
+            input_fn=mock_input,
+            print_fn=lambda msg="": outputs.append(str(msg)),
+            prompt_selection_fn=mock_prompt_selection
+        )
+        ctrl._action_create_recurring(week)
+
+        recs = [r for r in self.manager.recurring_tasks.values() if r.title == "STANDUP IT"]
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0].project_id, "SOFTWARE")
+        self.assertEqual(recs[0].days_of_week, [0, 2, 4])
+
 
 if __name__ == "__main__":
     unittest.main()

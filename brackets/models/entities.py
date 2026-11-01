@@ -11,8 +11,8 @@ from typing import List, Optional, Dict, Any
 @dataclass
 class Project:
     """Entidad Proyecto para agrupar tareas, notas y referencias."""
-    id: str  # ej: "AMR_LOGISTICS", "ROVO_AI"
-    name: str  # ej: "Amr Logistics"
+    id: str  # ej: "PROJ_ALPHA", "CORE"
+    name: str  # ej: "Project Alpha"
     description: Optional[str] = None
     status: str = "active"  # "active", "completed", "archived"
 
@@ -63,8 +63,8 @@ class Idea:
 @dataclass
 class Definition:
     """Entidad Definición / Enlace externo (Jira, Confluence, etc.)."""
-    id: str  # ej: "🎫ATLM-12682" o "🦒EXPORT"
-    url: str  # ej: "https://mangospain.atlassian.net/browse/ATLM-12682"
+    id: str  # ej: "[🎫PROJ-1234]" o "🔗DOCS"
+    url: str  # ej: "https://jira.example.com/browse/PROJ-1234"
     title: Optional[str] = None
     type: str = "jira"  # "jira", "link", "custom"
 
@@ -85,8 +85,8 @@ class Definition:
 class Person:
     """Entidad Persona / Contacto referenciado mediante @handle."""
     id: str  # ej: "PER-0001"
-    handle: str  # ej: "@DidacAlbi"
-    name: str  # ej: "Didac Albi"
+    handle: str  # ej: "@NombreApellido"
+    name: str  # ej: "Nombre Apellido"
     created_at: str = ""  # "YYYY-MM-DD"
     status: str = "active"  # "active", "inactive"
 
@@ -142,6 +142,7 @@ class RecurringTask:
     active: bool = True
     created_at: str = ""
     task_type: str = "task"  # "task", "meeting"
+    description: Optional[str] = None  # Líneas de descripción / detalle de la tarea
 
     @property
     def is_meeting(self) -> bool:
@@ -167,7 +168,8 @@ class RecurringTask:
             topic_id=data.get("topic_id"),
             active=data.get("active", True),
             created_at=data.get("created_at", ""),
-            task_type=data.get("task_type", "task")
+            task_type=data.get("task_type", "task"),
+            description="\n".join(str(x) for x in data["description"]) if isinstance(data.get("description"), list) else (str(data["description"]) if data.get("description") is not None else None)
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -186,6 +188,7 @@ class Task:
     topic_id: Optional[str] = None
     recurring_id: Optional[str] = None
     task_type: str = "task"  # "task", "meeting"
+    description: Optional[str] = None  # Líneas de descripción / detalle de la tarea
 
     @property
     def is_done(self) -> bool:
@@ -228,7 +231,8 @@ class Task:
             project_id=data.get("project_id"),
             topic_id=data.get("topic_id"),
             recurring_id=data.get("recurring_id"),
-            task_type=data.get("task_type", "task")
+            task_type=data.get("task_type", "task"),
+            description="\n".join(str(x) for x in data["description"]) if isinstance(data.get("description"), list) else (str(data["description"]) if data.get("description") is not None else None)
         )
 
     def to_dict(self) -> Dict[str, Any]:

@@ -156,3 +156,129 @@ menus:
         keys: ["0", "b", "v"]
         action: exec
         command: back
+
+  daily_tasks:
+    title: "📋 G E S T I Ó N  D E  T A R E A S  Y  H Á B I T O S"
+    items:
+      - id: new_task
+        label: "➕ Nueva Tarea HOY"
+        keys: ["1", "n"]
+        action: exec
+        command: new_task
+      - id: new_habit
+        label: "🌱 Registrar Hábito HOY"
+        keys: ["2", "h"]
+        action: exec
+        command: new_habit
+      - id: toggle_task
+        label: "✅ Marcar Tarea / Hábito (completar / reactivar)"
+        keys: ["3", "c", "m"]
+        action: exec
+        command: toggle_task
+      - id: delete_task
+        label: "🗑️  Borrar Tarea de la Bitácora (eliminar)"
+        keys: ["4", "d", "b"]
+        action: exec
+        command: delete_task
+      - id: new_topic
+        label: "🎯 Crear nuevo Objetivo Semanal"
+        keys: ["5", "t"]
+        action: exec
+        command: new_topic
+      - id: new_week_task
+        label: "📋 Nueva Tarea SEMANAL (sin día fijo)"
+        keys: ["6", "w"]
+        action: exec
+        command: new_week_task
+      - id: schedule_topic
+        label: "➡️  Agendar Tarea / Objetivo a HOY"
+        keys: ["7", "a"]
+        action: exec
+        command: schedule_topic
+      - id: edit_task
+        label: "✏️  Editar Tarea (texto / categoría)"
+        keys: ["8", "e"]
+        action: exec
+        command: edit_task
+      - id: recurring_menu
+        label: "🔄 Hábitos y Tareas Recurrentes"
+        keys: ["9", "r"]
+        action: exec
+        command: recurring_menu
+      - id: sync_markdown
+        label: "🔄 Sincronizar Semana Actual (.md ➔ YAML)"
+        keys: ["10", "y", "sync"]
+        action: exec
+        command: sync_markdown
+      - id: run_pomodoro
+        label: "🍅 Iniciar Sesión de Enfoque (Pomodoro)"
+        keys: ["11", "k", "pomo"]
+        action: exec
+        command: run_pomodoro
+      - id: cancel_task
+        label: "❌ Cancelar / Tachar Tarea"
+        keys: ["12", "x", "cancel"]
+        action: exec
+        command: cancel_task
+
+  recurring:
+    title: "🔄 G E S T I Ó N  D E  R E C U R R E N T E S  Y  R E U N I O N E S"
+    items:
+      - id: new_rec
+        label: "➕ Nueva Tarea / Reunión Recurrente"
+        keys: ["1", "n", "+"]
+        action: exec
+        command: new_rec
+      - id: toggle_rec
+        label: "⏯️  Pausar / Activar Recurrencia"
+        keys: ["2", "p", "t"]
+        action: exec
+        command: toggle_rec
+      - id: delete_rec
+        label: "🗑️  Eliminar Definición Recurrente"
+        keys: ["3", "d"]
+        action: exec
+        command: delete_rec
+      - id: sync_rec
+        label: "⚡ Inyectar / Sincronizar en esta semana"
+        keys: ["4", "s"]
+        action: exec
+        command: sync_rec
+
+  definitions:
+    title: "🔗 G E S T I Ó N  D E  D E F I N I C I O N E S  Y  E N L A C E S"
+    items:
+      - id: new_jira_def
+        label: "🎫 Nueva Definición Jira (ej: PROJ-1234)"
+        keys: ["1", "j"]
+        action: exec
+        command: new_jira_def
+      - id: new_custom_def
+        label: "🔗 Nueva Definición Personalizada (ID + URL)"
+        keys: ["2", "c"]
+        action: exec
+        command: new_custom_def
+      - id: list_defs
+        label: "📋 Listar Definiciones registradas"
+        keys: ["3", "l"]
+        action: exec
+        command: list_defs
+      - id: delete_def
+        label: "🗑️  Eliminar Definición"
+        keys: ["4", "d"]
+        action: exec
+        command: delete_def
+
+  sync_markdown:
+    title: "🔄 S I N C R O N I Z A C I Ó N  M A R K D O W N  ➔  Y A M L"
+    items:
+      - id: sync_specific_week
+        label: "📅 Sincronizar una semana específica"
+        keys: ["1", "s"]
+        action: exec
+        command: sync_specific_week
+      - id: sync_all_weeks
+        label: "🌐 Sincronizar TODAS las semanas del Vault"
+        keys: ["2", "t", "all"]
+        action: exec
+        command: sync_all_weeks
