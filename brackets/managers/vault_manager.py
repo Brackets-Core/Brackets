@@ -38,27 +38,104 @@ class VaultManager:
         config_path = os.path.join(path, "data", "config.yaml")
         return os.path.exists(config_path)
 
+    def _load_external_vault_paths(self) -> List[str]:
+        """Carga rutas a vaults externos desde vaults.yaml local o global ~/.brackets/vaults.yaml."""
+        candidates = [
+            os.path.join(self.workspace_root, "vaults.yaml"),
+            os.path.join(self.workspace_root, "data", "vaults.yaml"),
+            os.path.join(os.path.expanduser("~"), ".brackets", "vaults.yaml"),
+        ]
+        external_paths = []
+        for cand in candidates:
+            if os.path.exists(cand):
+                try:
+                    import yaml
+                    with open(cand, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+                        base_dir = os.path.dirname(cand)
+                        if isinstance(data, list):
+                            for item in data:
+                                p = item if isinstance(item, str) else (item.get("path") if isinstance(item, dict) else None)
+                                if p:
+                                    external_paths.append(os.path.abspath(os.path.join(base_dir, p)) if not os.path.isabs(p) else os.path.abspath(p))
+                        elif isinstance(data, dict):
+                            entries = data.get("vaults") or data.get("external_vaults") or []
+                            if isinstance(entries, list):
+                                for item in entries:
+                                    p = item if isinstance(item, str) else (item.get("path") if isinstance(item, dict) else None)
+                                    if p:
+                                        external_paths.append(os.path.abspath(os.path.join(base_dir, p)) if not os.path.isabs(p) else os.path.abspath(p))
+                except Exception:
+                    pass
+        return external_paths
+
+    def resolve_vault_path(self, vault_identifier: Optional[str] = None) -> Optional[str]:
+        """Resuelve un nombre o ruta de vault al path absoluto correspondiente."""
+        if not vault_identifier:
+            return self.vaults[0]["path"] if self.vaults else None
+
+        target = vault_identifier.strip().lower()
+        for v in self.vaults:
+            if v["name"].lower() == target or os.path.abspath(v["path"]).lower() == os.path.abspath(vault_identifier).lower():
+                return v["path"]
+
+        # Probar subcarpeta vaults/ o ruta directa
+        candidates = [
+            os.path.abspath(os.path.join(self.workspace_root, "vaults", vault_identifier)),
+            os.path.abspath(os.path.join(self.workspace_root, vault_identifier)),
+            os.path.abspath(vault_identifier),
+        ]
+        for cand in candidates:
+            if self._is_valid_vault(cand):
+                return cand
+
+        return None
+
     def _discover_vaults(self) -> List[Dict[str, str]]:
         """
-        Descubre todos los vaults en el workspace.
+        Descubre todos los vaults en el workspace (en raíz, en carpeta vaults/ o externos).
 
         Returns:
             Lista de diccionarios con info de cada vault: {name, path, description}
         """
         vaults = []
+        seen_paths = set()
 
-        # Buscar en el workspace (1 nivel de profundidad)
+        def add_candidate(cand_path: str, cand_name: Optional[str] = None):
+            norm = os.path.abspath(cand_path).lower()
+            if norm in seen_paths:
+                return
+            if os.path.isdir(cand_path) and self._is_valid_vault(cand_path):
+                name = cand_name or os.path.basename(cand_path)
+                vaults.append(self._get_vault_info(cand_path, name))
+                seen_paths.add(norm)
+
         try:
-            for item in os.listdir(self.workspace_root):
-                item_path = os.path.join(self.workspace_root, item)
+            # 1. Buscar en el workspace raíz (ej: MyJobNotes, PersonalNotes...)
+            if os.path.exists(self.workspace_root):
+                for item in os.listdir(self.workspace_root):
+                    if item.startswith('.') or item in ('SharedContext', 'brackets', 'vaults'):
+                        continue
+                    item_path = os.path.join(self.workspace_root, item)
+                    if os.path.isdir(item_path):
+                        add_candidate(item_path, item)
 
-                # Ignorar directorios que no son vaults
-                if item.startswith('.') or item == 'SharedContext':
-                    continue
+                # 2. Buscar dentro de carpeta contenedora 'vaults/' si existe
+                vaults_dir = os.path.join(self.workspace_root, "vaults")
+                if os.path.isdir(vaults_dir):
+                    for item in os.listdir(vaults_dir):
+                        if item.startswith('.'):
+                            continue
+                        item_path = os.path.join(vaults_dir, item)
+                        if os.path.isdir(item_path):
+                            add_candidate(item_path, item)
 
-                if os.path.isdir(item_path) and self._is_valid_vault(item_path):
-                    vault_info = self._get_vault_info(item_path, item)
-                    vaults.append(vault_info)
+            # 3. Cargar vaults externos registrados en vaults.yaml
+            for ext in self._load_external_vault_paths():
+                ext_abs = os.path.abspath(ext) if not os.path.isabs(ext) else ext
+                if os.path.exists(ext_abs):
+                    add_candidate(ext_abs)
+
         except Exception as e:
             print(f"⚠️  Error al buscar vaults: {e}")
 

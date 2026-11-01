@@ -35,22 +35,35 @@ def select_vault_directory(
         - vault_directory: selected/derived vault path (or None if exiting).
         - early_exit_code: exit code when startup should end early.
     """
-    if directory_arg is not None:
-        resolved_dir = _resolve_candidate_directory(directory_arg, current_dir)
-        if not _is_vault_root(resolved_dir):
-            print("❌ --directory debe apuntar a un vault válido (falta data/config.yaml).")
-            return None, 2
-        return directory_arg, None
+    scope_root, local_only = resolve_workspace_context_fn(current_dir or os.getcwd())
+
+    vault_indicator = directory_arg or os.environ.get("BRACKETS_VAULT")
+
+    if vault_indicator is not None:
+        resolved_dir = _resolve_candidate_directory(vault_indicator, current_dir)
+        if _is_vault_root(resolved_dir):
+            return resolved_dir, None
+
+        if vault_manager_factory is None:
+            from brackets.managers.vault_manager import VaultManager
+            vault_manager_factory = VaultManager
+
+        vm = vault_manager_factory(scope_root)
+        if hasattr(vm, "resolve_vault_path"):
+            found = vm.resolve_vault_path(vault_indicator)
+            if found and _is_vault_root(found):
+                return found, None
+
+        print(f"❌ No se encontró un vault válido para '{vault_indicator}' (falta data/config.yaml).")
+        return None, 2
 
     if has_flags:
-        scope_root, local_only = resolve_workspace_context_fn(current_dir or os.getcwd())
         if local_only:
             return scope_root, None
 
-        print("❌ Para usar flags de acción debes ejecutar dentro de un vault local o indicar --directory.")
+        print("❌ Para usar flags de acción debes ejecutar dentro de un vault local o indicar --vault / --directory o fijar BRACKETS_VAULT.")
         return None, 2
 
-    scope_root, local_only = resolve_workspace_context_fn(current_dir or os.getcwd())
     if local_only:
         return scope_root, None
 
@@ -68,15 +81,19 @@ def select_vault_directory(
 
     while True:
         selected = vault_mgr.show_vault_menu()
-
         if selected is None:
             return None, 0
 
         if selected == "CREATE_NEW":
-            new_vault_path = create_new_vault_fn(scope_root)
-            if new_vault_path:
+            created_path = create_new_vault_fn(scope_root)
+            if created_path:
                 vault_mgr.refresh_vaults()
-                return new_vault_path, None
+                return created_path, None
             continue
 
-        return selected, None
+        resolved_selected = _resolve_candidate_directory(selected, current_dir)
+        if _is_vault_root(resolved_selected):
+            return resolved_selected, None
+
+        print(f"❌ El directorio seleccionado no es un vault válido: {selected}")
+        input("Presiona Enter para continuar...")

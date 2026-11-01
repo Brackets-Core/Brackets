@@ -2,16 +2,17 @@
 
 <div align="center">
 
-**Sistema modular de gestión de bitácoras semanales y notas organizadas**
+**Sistema Operativo Personal de Productividad: Bitácoras Semanales, Base Relacional YAML, CLI y Web Hub (PWA)**
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/CodeAndRes/Brackets/releases)
 
 [Características](#-características) •
-[Instalación](#-instalación) •
-[Uso Rápido](#-uso-rápido) •
-[Documentación](#-documentación)
+[Instalación y Ejecución](#️-requisitos-e-instalación) •
+[Web Hub y API REST](#-brackets-web-hub-pwa--api-rest) •
+[Estructura](#-estructura-del-repositorio) •
+[Tests](#-tests)
 
 </div>
 
@@ -19,332 +20,134 @@
 
 ## 🎯 ¿Qué es Brackets?
 
-Brackets es un sistema Python que combina **gestión temporal con organización estructurada de notas**:
+Brackets es un motor modular en Python que combina **bitácoras semanales en Markdown** con una **base de datos relacional YAML-First**, manteniendo tus vaults **100% libres de código Python**:
 
-- 📝 **Bitácoras semanales** con transferencia automática de tareas pendientes
-- 📦 **Consolidación mensual/anual** para archivar contenido
-- 📂 **Categorías jerárquicas** infinitas para organizar documentos
-- 🔍 **Búsqueda y reemplazo global** en nombres y contenido
-- ⚙️ **Configuración flexible** por vault (horarios, festivos, paths)
-- 🧩 **Modo opcional sin bitácoras** - úsalo solo para gestionar notas
+- 🖥️ **Daily Hub en CLI y Web (PWA)**: Gestiona el día a día desde consola o desde navegador/móvil instalable como app.
+- 🔄 **Sincronización Bidireccional `Markdown ↔ YAML`**: Edita tus archivos `.md` en cualquier editor o usa la interfaz/API; Brackets reconcilia ambos mundos de forma idempotente.
+- 🗂️ **Multi-Vault Externo y Agnóstico**: Opera múltiples vaults (`work` de 5 días o `personal` de 7 días) alojados en `vaults/` o en cualquier ruta externa mediante `--vault`, `BRACKETS_VAULT` o `vaults.yaml`.
+- 🏷️ **Tipos de Tareas y Premojis Declarativos**: Configurables sin tocar código en `data/task_types.yaml` (`meeting` → `🫱🏼‍🫲🏽`, `habit` → `🌱`, etc.) y soporte de proyectos con `#[ProjectCode]`.
+- 📦 **Consolidación Mensual/Anual y Categorías `[BRACKETS]`**: Archivo histórico jerárquico y nomenclatura estructurada por corchetes.
+- 🍅 **Pomodoro Timer + Tomatín**: Temporizador de foco integrado en consola y modo visual retro.
 
-## ✨ Características
+---
 
-### 🖥️ Hub Diario y Navegación Interactiva
-- **Dashboard en tiempo real**: Visualiza la semana activa, topics en curso, tareas de hoy, tareas semanales sin día fijo y notas.
-- **Navegación ágil por categorías (Opción B)**: Menú armonizado con accesos directos (`[t]` Tareas, `[n]` Notas, `[p]` Proyectos, `[d]` Días) y footer limpio.
-- **Sincronización Bidireccional Markdown ➔ YAML**: Edita tus archivos `.md` en cualquier editor y Brackets reconcilia los cambios automáticamente sin duplicidades.
+## ✨ Características Principales
 
-### 🗃️ Base de Datos Relacional YAML-First
-- **Fuente de verdad estructurada**: Todas las entidades viven en `data/tables/` (`projects.yaml`, `topics.yaml`, `tasks.yaml`, `notes.yaml`, `definitions.yaml`, `recurring_tasks.yaml`).
-- **Jerarquía `Proyecto ➔ Topic ➔ Tarea / Nota`**: Tópicos semanales enmarcados en proyectos, con asignación y herencia relacional directa.
-- **Backlog de Proyecto**: Gestión interactiva de tareas por proyecto, con filtros pendientes/completadas y reactivación.
+### 🗃️ Modelo Relacional YAML-First
+- **Tablas desacopladas en `data/tables/`**: `tasks.yaml`, `topics.yaml`, `projects.yaml`, `definitions.yaml`, `recurring_tasks.yaml`, `people.yaml` y notas mensuales en `data/tables/notes/`.
+- **Programación por semana en `data/weeks/YYYY-WXX.yaml`**: Vincula días, ubicaciones (`🏠`/`🚗`), tareas del día, `Week Tasks` sin día fijo y `Topics`.
+- **Backlog y métricas por proyecto**: Trazabilidad mediante tags `#[Proyecto]` y rollover inteligente de tareas pendientes entre semanas.
 
-### 🔄 Tareas Recurrentes y Ciclo de Vida Semanal
-- **Reuniones y rutinas programadas**: Configuración de tareas para días específicos (ej: *Daily S^3* los L-X-V) o intervalos (ej: *Renovar accesos* cada 4 semanas). Inyección idempotente.
-- **Sección `## 📋Week Tasks`**: Tareas de la semana sin día fijo.
-- **Rollover con regla de 2 semanas**: Las tareas pendientes de la semana previa se traspasan a la nueva semana; si cumplen 2 semanas sin resolverse, se retiran de la semana y quedan archivadas en el Backlog de su Proyecto.
-
-### 📝 Generación de Bitácoras
-- **Bitácoras semanales automáticas**: Calcula fechas y transfiere tareas pendientes
-- **Creación manual**: Para vaults nuevos o control total de fechas
-- **Gestión de peso**: Seguimiento opcional
-- **Patrón de trabajo configurable**: Teletrabajo/presencial con semanas alternas
-
-### 📦 Consolidación
-- **Mensual**: Agrupa todas las semanas de un mes en un archivo
-- **Anual**: Consolida todo el año basándose en archivos mensuales
-- **Orden inverso**: Contenido más reciente primero
-- **Jerarquía clara**: Año > Meses > Semanas > Días
-
-### 📂 Gestión de Documentos y Categorías
-- **Categorías jerárquicas**: Anidación infinita (Categoría → Sub → Sub → ...)
-- **Nomenclatura automática**: `[CATEGORIA][SUBCATEGORIA]nombre.ext`
-- **Múltiples extensiones**: `.md`, `.py`, `.sql`, `.yaml`, etc.
-- **Navegación interactiva**: Menú guiado para crear documentos
-
-### 🔧 Herramientas
-- **Timer Pomodoro v1**: Gestión de sesiones de foco y descanso integrada en CLI
-- **Búsqueda y reemplazo global**: En contenido y nombres de archivo
-- **Renombrado inteligente**: Actualiza referencias automáticamente
-- **Sincronización YAML**: Mantiene `categories.yaml` actualizado con el repo
+### ⚙️ Adaptación Nativa `work` vs `personal`
+Definido en `data/config.yaml` (`vault_type: work | personal`):
+- **Work**: Semanas laborables (Lunes a Viernes + soporte opcional de guardia), calendario laboral con festivos/cierres/jornada intensiva y foco en proyectos/tickets.
+- **Personal**: Semanas naturales completas (7 días, Lunes a Domingo), premojis orientados a hábitos (`🌱`), recados, salud y finanzas.
 
 ---
 
 ## 🛠️ Requisitos e Instalación
 
 - **Python 3.9+**
-- **PyYAML** (único requisito externo)
+- **PyYAML** (`pip install -r requirements.txt`) — el servidor Web/API usa exclusivamente la librería estándar de Python.
 
-### Opción 1: Clonar y usar directamente
+### Ejecución Externa (Cero Python en los Vaults)
 
-```bash
-git clone https://github.com/CodeAndRes/Brackets.git
-cd Brackets
-pip install pyyaml
+El motor siempre se lanza desde fuera del vault (desde el launcher del workspace o desde este repositorio):
+
+```powershell
+# Selector interactivo de vaults descubiertos / registrados en vaults.yaml
+python run_brackets.py
+
+# Apuntar a un vault por nombre o ruta absoluta externa
+python run_brackets.py --vault MyJobNotes
+python run_brackets.py --vault "D:/MisNotas/VaultPersonal"
+
+# Mediante variable de entorno
+$env:BRACKETS_VAULT="MyJobNotes"
 python run_brackets.py
 ```
 
-### Opción 2: Instalación pip (editable)
+### Comandos Rápidos CLI
 
-```bash
-git clone https://github.com/CodeAndRes/Brackets.git
-cd Brackets
-pip install -e .
+```powershell
+python run_brackets.py --vault MyJobNotes --weekly                  # Generar nueva bitácora semanal
+python run_brackets.py --vault MyJobNotes --add-task "Revisar PR"   # Añadir tarea rápida
+python run_brackets.py --vault MyJobNotes --list                    # Listar bitácoras recientes
+python run_brackets.py --vault MyJobNotes --consolidate 2026-10     # Consolidar mes
+python run_brackets.py --vault MyJobNotes --consolidate-year 2026   # Consolidar año
+python run_brackets.py --timer                                      # Pomodoro CLI
+python run_brackets.py --timer-gui                                  # Pomodoro GUI retro (Tomatín)
+python run_brackets.py --web --port 8080                            # Iniciar Web Hub + API REST
 ```
-
-### Opción 3: Integrar con vault existente
-
-Si tienes un vault de notas, crea un `run_brackets.py`:
-
-```python
-#!/usr/bin/env python3
-import sys
-import os
-
-# Path al core de Brackets
-CORE_PATH = r"C:\ruta\a\Brackets"
-if CORE_PATH not in sys.path:
-    sys.path.insert(0, CORE_PATH)
-
-from brackets.main import main
-
-if __name__ == "__main__":
-    main()
-```
-
-## 🎯 Uso Rápido
-
-### Crear tu primer vault
-
-```bash
-# 1. Crear estructura
-mkdir mi-vault
-cd mi-vault
-mkdir data
-```
-
-```yaml
-# 2. Crear data/config.yaml
-version: "1.0.0"
-system: "Brackets"
-
-feature_flags:
-  bitacoras_enabled: true
-
-paths:
-  notes_root: "."
-  data_dir: "data"
-
-sync_yaml:
-  include_extensions: [".md"]
-  excluded_prefixes: []
-  output_file: "categories_SYNCED.yaml"
-```
-
-```yaml
-# 3. Crear data/categories.yaml
-version: "1.0.0"
-categories: []
-```
-
-```bash
-# 4. Ejecutar (desde el directorio de Brackets)
-cd ../Brackets
-python run_brackets.py --directory ../mi-vault
-```
-
-### Menú Interactivo
-
-```bash
-python run_brackets.py
-```
-
-Opciones disponibles:
-- 📝 Crear bitácora semanal (automática desde última semana)
-- ✏️ Crear bitácora manual (especifica fechas)
-- 📋 Crear archivo mensual
-- 📦 Consolidar mes completo
-- 📅 Consolidar año completo
-- 📂 Gestionar categorías y documentos
-- 🔍 Búsqueda y reemplazo global
-- ⚙️ Configuración (horarios, festivos, vacaciones)
-
-### Línea de Comandos
-
-```bash
-# Crear bitácora semanal directamente
-python run_brackets.py --weekly
-
-# Listar archivos recientes
-python run_brackets.py --list
-
-# Consolidar mes específico
-python run_brackets.py --consolidate 2026-02
-
-# Consolidar año completo
-python run_brackets.py --consolidate-year 2026
-
-# Ver ayuda
-python run_brackets.py --help
-```
-
-## 📁 Estructura del Repositorio
-
-```
-brackets/
-├── brackets/              # 🎯 Código principal
-│   ├── core/             # Clases base y núcleo
-│   ├── utils/            # Utilidades compartidas
-│   ├── managers/         # Gestores de alto nivel
-│   │   ├── category_manager.py
-│   │   ├── settings_manager.py
-│   │   └── file_rename_manager.py
-│   ├── consolidators/    # Consolidación mensual/anual
-│   ├── generators/       # Generación de bitácoras
-│   ├── models/           # Modelos de datos
-│   ├── tools/            # Herramientas auxiliares
-│   └── tests/            # Tests automatizados
-├── run_brackets.py       # Punto de entrada
-├── requirements.txt      # Dependencias
-├── setup.py             # Instalación pip
-├── README.md
-└── LICENSE
-```
-
-## 📋 Ejemplos
-
-### Bitácora Semanal Generada
-
-```markdown
-# 🗓️Week 8 108.0
-
-## ✅Topics
-  - [x] Reclamar conexión de InfluxDB
-  - [ ] Empezar a construir Dashboards en Grafana
-  ---
-
-## 📝Notes
-- ### Upgrade versión InfluxDB
-  - @MarcCristany propone hacer un upgrade
-  - @FerranVallalta y @PabloMartinez de acuerdo
-  ---
-
-## 🚗17 (Oficina)
-  - [ ] Revisión de base de datos
-  - [x] Reunión de coordinación
-
-<!-- Definiciones -->
-[🎫ATLM-12682]: https://mangospain.atlassian.net/browse/ATLM-12682
-```
-
-### Estructura de Categorías
-
-```yaml
-categories:
-  - name: "🎓LEARNING"
-    description: "Aprendizaje y formación"
-    subcategories:
-      - name: "PYTHON"
-        subcategories:
-          - name: "ADVANCED"
-            documents:
-              - "decorators.md"
-              - "async_io.md"
-      - name: "GIT"
-        documents:
-          - "commands.md"
-          - "workflows.md"
-  
-  - name: "📋PROJECTS"
-    description: "Proyectos activos"
-    subcategories:
-      - name: "WEB"
-        documents:
-          - "api_design.md"
-```
-
-### Archivos Generados
-
-```
-vault/
-├── [2026][02]Week08.md              # Bitácora semanal (renderizada)
-├── [2026][02].md                    # Consolidado mensual
-├── [2026].md                        # Consolidado anual
-├── [🎓LEARNING][PYTHON]decorators.md
-├── [🎓LEARNING][GIT]commands.md
-└── [📋PROJECTS][WEB]api_design.md
-```
-
-## ⚙️ Configuración Avanzada
-
-### Feature Flags
-
-```yaml
-feature_flags:
-  bitacoras_enabled: false  # Desactiva modo temporal, solo notas
-```
-
-### Paths Personalizados
-
-```yaml
-paths:
-  notes_root: "notes"       # Carpeta con archivos .md
-  data_dir: "data"          # Carpeta con YAML de configuración y tablas
-```
-
-### Horario de Trabajo
-
-```yaml
-# En data/work_calendar.yaml
-work_pattern:
-  monday:
-    location: "casa"
-    emoji: "🏠"
-  tuesday:
-    location: "oficina"
-    emoji: "🚗"
-  # ...
-  friday:
-    location: "alternativo"
-    semana_par: "casa"
-    semana_impar: "oficina"
-```
-
-## 🧪 Tests
-
-```bash
-# Ejecutar suite completa (118 tests)
-python brackets/tests/test_suite.py
-
-# En Windows (PowerShell con codificación UTF-8)
-$env:PYTHONUTF8=1; python brackets/tests/test_suite.py
-```
-
-## 🤝 Contribuir
-
-¿Encontraste un bug o tienes una idea? ¡Abre un issue!
-
-1. Fork el proyecto
-2. Crea una rama (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add: amazing feature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📝 Licencia
-
-Este proyecto está bajo la licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles.
-
-## 🙏 Agradecimientos
-
-Desarrollado por [CodeAndRes](https://github.com/CodeAndRes) como sistema personal de gestión de bitácoras y notas.
 
 ---
 
-<div align="center">
+## 🌐 Brackets Web Hub (PWA & API REST)
 
-**[⬆ Volver arriba](#-brackets)**
+Al ejecutar `python run_brackets.py --web`, Brackets levanta un servidor ligero (`127.0.0.1:8080` por defecto) que sirve la **PWA instalable** (PC/móvil) y una **API REST JSON** pensada también para que agentes de IA y automatizaciones registren tareas o actividad directamente:
 
-Made with ❤️ and Python
+| Método | Ruta | Propósito |
+|---|---|---|
+| `GET` | `/api/vaults` | Lista todos los vaults disponibles (`name`, `path`, `vault_type`). |
+| `GET` | `/api/hub?vault=<name>&year=YYYY&week=WW&day=DD` | Devuelve el estado completo de la semana y día activo (tareas, progreso, ubicaciones, proyectos). |
+| `POST` | `/api/tasks` | Crea una tarea (pendiente o ya completada) y regenera el `.md` semanal automáticamente. |
+| `POST` / `PATCH` | `/api/tasks/{task_id}/toggle` | Alterna el estado `pending` / `done` de una tarea y sincroniza el `.md`. |
+| `POST` / `PATCH` | `/api/days/{day_number}/location` | Actualiza el emoji/nota de ubicación de un día (`🏠`, `🚗`, etc.). |
+| `POST` | `/api/sync` | Fuerza reconciliación `Markdown ➔ YAML ➔ Markdown` de la semana activa. |
 
-</div>
+**Ejemplo de alta de tarea ya resuelta desde IA o script (`POST /api/tasks`):**
+
+```json
+{
+  "vault": "MyJobNotes",
+  "title": "🫱🏼‍🫲🏽 Revisión de arquitectura API #[BRACKETS]",
+  "target": "today",
+  "is_done": true,
+  "description": "Acordado diseño desacoplado de vaults y skills."
+}
+```
+
+---
+
+## 📁 Estructura del Repositorio
+
+```text
+brackets/
+├── brackets/                  # 🎯 Paquete principal Python
+│   ├── core/                  # Controladores modulares (DailyHub, Startup, MenuEngine, Backlog...)
+│   ├── managers/              # EntityManager, MarkdownSyncService, VaultManager, SettingsManager
+│   ├── models/                # Entidades relacionales (Task, Note, Topic...) y TaskTypeRegistry
+│   ├── generators/            # WeeklyGenerator, MonthlyGenerator y BitacoraRenderer
+│   ├── consolidators/         # Consolidación mensual y anual segura
+│   ├── modules/               # Módulos enchufables (Pomodoro Timer, mascota retro Tomatín)
+│   ├── web/                   # Servidor HTTP estándar, BracketsWebService y PWA estática
+│   ├── services/              # Servicios de dominio auxiliares
+│   ├── worklog/               # Registro de eventos y actividad (log4brackets)
+│   ├── utils/                 # Parsers de Markdown, buscadores y creadores de vaults
+│   ├── tests/                 # Suite de tests automatizados (unittest)
+│   └── main.py                # Punto de entrada del paquete
+├── data/                      # Plantillas YAML por defecto y base mock para tests
+├── docs/                      # Especificaciones, diseño y contexto técnico
+├── scripts/                   # Utilidades de mantenimiento y demos del motor
+├── run_brackets.py            # Launcher local del motor
+├── requirements.txt           # Dependencias (PyYAML)
+├── setup.py                   # Empaquetado pip
+└── LICENSE                    # Licencia MIT
+```
+
+---
+
+## 🧪 Tests
+
+El proyecto cuenta con una suite de **144 tests unitarios y de integración** (incluyendo sincronización bidireccional, premojis, descubrimiento multi-vault y endpoints HTTP de la API Web):
+
+```powershell
+# Ejecutar toda la suite estándar desde la carpeta brackets/
+python -m unittest discover -s brackets/tests
+```
+
+---
+
+## 📝 Licencia
+
+Distribuido bajo la licencia MIT. Consulta [`LICENSE`](LICENSE) para más información.

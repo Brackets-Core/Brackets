@@ -116,28 +116,25 @@ class BracketsWebService:
 
     def resolve_vault_path(self, vault_identifier: Optional[str] = None) -> str:
         """Resuelve un nombre o ruta de vault al path absoluto correspondiente."""
-        vaults = self.list_vaults()
-        if not vaults:
-            return self.workspace_root
+        resolved = self.vault_manager.resolve_vault_path(vault_identifier)
+        if resolved:
+            return resolved
 
-        if not vault_identifier:
+        vaults = self.list_vaults()
+        if vaults:
             # Preferir MyJobNotes por defecto o el primer vault disponible
             for v in vaults:
                 if v["name"].lower() == "myjobnotes":
                     return v["path"]
             return vaults[0]["path"]
 
-        target = vault_identifier.strip().lower()
-        for v in vaults:
-            if v["name"].lower() == target or os.path.abspath(v["path"]).lower() == os.path.abspath(vault_identifier).lower():
-                return v["path"]
-
         # Si apunta a un directorio válido con data/config.yaml
-        cand = os.path.abspath(vault_identifier)
-        if os.path.exists(os.path.join(cand, "data", "config.yaml")):
-            return cand
+        if vault_identifier:
+            cand = os.path.abspath(vault_identifier)
+            if os.path.exists(os.path.join(cand, "data", "config.yaml")):
+                return cand
 
-        return vaults[0]["path"]
+        return self.workspace_root
 
     def _sync_week_from_markdown_if_exists(self, vault_path: str, week: WeekSchedule, mgr: EntityManager) -> None:
         """Absorbe cambios hechos a mano en el .md de la semana activa."""

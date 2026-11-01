@@ -267,33 +267,45 @@ def _generate_runner_script() -> str:
     """Genera el contenido de run_brackets.py."""
     return """#!/usr/bin/env python3
 \"\"\"Script principal de lanzamiento para el Sistema Brackets.
-Este vault usa el core desde ../brackets
+Este archivo actúa como punto de entrada desde el vault.
+Usa el core de Brackets de forma dinámica y desacoplada.
 \"\"\"
 
 import sys
 import os
 
-# Path al core de Brackets
-CORE_PATH = os.path.abspath(os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "brackets"
-))
+def find_core_path() -> str:
+    if \"BRACKETS_CORE_PATH\" in os.environ and os.path.exists(os.environ[\"BRACKETS_CORE_PATH\"]):
+        return os.path.abspath(os.environ[\"BRACKETS_CORE_PATH\"])
 
-# Agregar el core al path
+    cur = os.path.abspath(os.path.dirname(__file__))
+    while cur and os.path.dirname(cur) != cur:
+        for cand in [
+            os.path.join(cur, \"brackets\"),
+            os.path.join(os.path.dirname(cur), \"brackets\")
+        ]:
+            if os.path.exists(os.path.join(cand, \"brackets\", \"main.py\")):
+                return os.path.abspath(cand)
+        cur = os.path.dirname(cur)
+
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), \"..\", \"brackets\"))
+
+CORE_PATH = find_core_path()
+
 if CORE_PATH not in sys.path:
     sys.path.insert(0, CORE_PATH)
 
-# Verificar que el core existe
-if not os.path.exists(os.path.join(CORE_PATH, "brackets", "main.py")):
-    print(f"❌ Error: No se encuentra el core de Brackets en: {CORE_PATH}")
-    print(f"   Asegúrate de que existe: {os.path.join(CORE_PATH, 'brackets', 'main.py')}")
+if not os.path.exists(os.path.join(CORE_PATH, \"brackets\", \"main.py\")):
+    print(f\"❌ Error: No se encuentra el core de Brackets en: {CORE_PATH}\")
+    print(\"   Define la variable de entorno BRACKETS_CORE_PATH si tu vault está fuera del workspace.\")
     sys.exit(1)
 
-# Importar y ejecutar el main desde brackets
 from brackets.main import main
 
-if __name__ == "__main__":
+if __name__ == \"__main__\":
+    if \"--directory\" not in sys.argv and \"-d\" not in sys.argv:
+        vault_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.argv.extend([\"--directory\", vault_dir])
     main()
 """
 
@@ -307,34 +319,23 @@ def _generate_readme(vault_name: str, description: str, bitacoras_enabled: bool)
 {desc_section}
 ## 🔗 Integración con Brackets
 
-Este vault utiliza el sistema **Brackets** para gestión de notas y documentos.
+Este vault es un depósito puro de datos (Markdown + YAML) gestionado desde fuera por el motor **Brackets** (cero código Python en el vault).
 
-- **Core del sistema**: `../brackets/`
 - **Bitácoras semanales**: {bitacoras_status}
 
-## 🚀 Uso
+## 🚀 Uso (desde la raíz del workspace)
 
-```bash
-# Desde este directorio
-python run_brackets.py
-
-# Con opciones
-python run_brackets.py --help
-python run_brackets.py --weekly
-python run_brackets.py --list
+```powershell
+python run_brackets.py --vault {vault_name}
+python run_brackets.py --web
 ```
 
 ## ⚙️ Configuración
 
 La configuración específica de este vault está en:
-- `data/config.yaml` - Configuración general y feature flags
+- `data/config.yaml` - Configuración general, `vault_type` y feature flags
+- `data/task_types.yaml` - Tipos de tareas y premojis declarativos
 - `data/categories.yaml` - Estructura de categorías de documentos
-
-## 📚 Documentación
-
-Documentación completa del sistema Brackets:
-- **Core**: `../brackets/README.md`
-- **Workspace**: `../SharedContext/HANDOFF_GLOBAL.md`
 """
 
 

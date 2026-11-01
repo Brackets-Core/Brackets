@@ -34,6 +34,13 @@ Ejemplos de uso:
     )
 
     parser.add_argument(
+        "--vault",
+        "-V",
+        default=None,
+        help="Nombre o ruta del vault a utilizar (ej: MyJobNotes o ruta externa)",
+    )
+
+    parser.add_argument(
         "--weekly",
         "-w",
         action="store_true",

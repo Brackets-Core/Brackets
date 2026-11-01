@@ -15,7 +15,8 @@ class TestPersonalVaultIntegration(unittest.TestCase):
 
     def setUp(self):
         self.workspace_root = r"c:\Projects\brackets-workspace"
-        self.personal_vault = os.path.join(self.workspace_root, "MyPersonalNotes")
+        cand_personal = os.path.join(self.workspace_root, "vaults", "MyPersonalNotes")
+        self.personal_vault = cand_personal if os.path.exists(cand_personal) else os.path.join(self.workspace_root, "MyPersonalNotes")
         self.data_dir = os.path.join(self.personal_vault, "data")
 
     def test_personal_vault_config_exists_and_is_personal(self):
@@ -67,40 +68,47 @@ class TestPersonalVaultIntegration(unittest.TestCase):
         self.assertEqual(hub.vault_type, "personal")
 
     def test_daily_hub_action_new_habit(self):
-        """Verifica que la acción _action_new_habit registra la tarea con tipo habit y premoji."""
+        """Verifica que la acción _action_new_habit registra la tarea con tipo habit y premoji (en copia aislada)."""
+        import shutil
+        import tempfile
         from brackets.models.entities import WeekSchedule, DaySchedule
 
-        mgr = EntityManager(self.data_dir)
-        mgr.load_all()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            isolated_vault = os.path.join(tmp_dir, "MyPersonalNotes")
+            shutil.copytree(self.personal_vault, isolated_vault)
+            isolated_data = os.path.join(isolated_vault, "data")
 
-        now = datetime.now()
-        iso_year, iso_week, _ = now.isocalendar()
-        week = WeekSchedule(year=iso_year, week_number=iso_week, month=now.month)
-        day = DaySchedule(day_number=now.day, location_emoji="🏠")
-        week.days.append(day)
-        mgr.save_week(week)
+            mgr = EntityManager(isolated_data)
+            mgr.load_all()
 
-        inputs = ["Yoga matutino"]
-        outputs = []
+            now = datetime.now()
+            iso_year, iso_week, _ = now.isocalendar()
+            week = WeekSchedule(year=iso_year, week_number=iso_week, month=now.month)
+            day = DaySchedule(day_number=now.day, location_emoji="🏠")
+            week.days.append(day)
+            mgr.save_week(week)
 
-        hub = DailyHubController(
-            entity_manager=mgr,
-            vault_root=self.personal_vault,
-            input_fn=lambda prompt="": inputs.pop(0) if inputs else "",
-            print_fn=lambda *args: outputs.append(" ".join(str(a) for a in args)),
-        )
+            inputs = ["Yoga matutino"]
+            outputs = []
 
-        initial_count = len(day.task_ids)
-        hub._action_new_habit(week, day)
+            hub = DailyHubController(
+                entity_manager=mgr,
+                vault_root=isolated_vault,
+                input_fn=lambda prompt="": inputs.pop(0) if inputs else "",
+                print_fn=lambda *args: outputs.append(" ".join(str(a) for a in args)),
+            )
 
-        self.assertEqual(len(day.task_ids), initial_count + 1)
-        created_task_id = day.task_ids[-1]
-        task = mgr.tasks.get(created_task_id)
+            initial_count = len(day.task_ids)
+            hub._action_new_habit(week, day)
 
-        self.assertIsNotNone(task)
-        self.assertEqual(task.title, "Yoga matutino")
-        self.assertEqual(task.task_type, "habit")
-        self.assertEqual(task.premoji, "🌱")
+            self.assertEqual(len(day.task_ids), initial_count + 1)
+            created_task_id = day.task_ids[-1]
+            task = mgr.tasks.get(created_task_id)
+
+            self.assertIsNotNone(task)
+            self.assertEqual(task.title, "Yoga matutino")
+            self.assertEqual(task.task_type, "habit")
+            self.assertEqual(task.premoji, "🌱")
 
     def test_weekly_generator_creates_7_day_week_in_personal_vault(self):
         """Verifica que WeeklyGenerator calcula 7 días (Lunes a Domingo) para MyPersonalNotes."""
@@ -117,7 +125,8 @@ class TestPersonalVaultIntegration(unittest.TestCase):
     def test_weekly_generator_creates_5_day_week_in_work_vault(self):
         """Verifica que WeeklyGenerator calcula 5 días (Lunes a Viernes) para MyJobNotes."""
         from brackets.generators.weekly import WeeklyGenerator
-        work_vault = os.path.join(self.workspace_root, "MyJobNotes")
+        cand_work = os.path.join(self.workspace_root, "vaults", "MyJobNotes")
+        work_vault = cand_work if os.path.exists(cand_work) else os.path.join(self.workspace_root, "MyJobNotes")
         gen = WeeklyGenerator(work_vault)
         self.assertEqual(gen._get_days_per_week(), 5)
 
