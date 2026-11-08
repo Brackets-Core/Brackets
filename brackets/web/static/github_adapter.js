@@ -99,7 +99,7 @@
   const DEFAULT_REMOTE_VAULTS = [
     {
       id: 'gh:MyPersonalNotes',
-      name: '☁️ MyPersonalNotes (GitHub)',
+      name: '☁️ MyPersonalNotes',
       owner: 'Brackets-Core',
       repo: 'MyPersonalNotes',
       branch: 'main',
@@ -110,7 +110,7 @@
     },
     {
       id: 'gh:MyJobNotes',
-      name: '☁️ MyJobNotes (GitHub)',
+      name: '☁️ MyJobNotes',
       owner: 'Brackets-Core',
       repo: 'MyJobNotes',
       branch: 'master',
@@ -135,9 +135,13 @@
         if (!Array.isArray(parsed.remote_vaults) || parsed.remote_vaults.length === 0) {
           parsed.remote_vaults = JSON.parse(JSON.stringify(DEFAULT_REMOTE_VAULTS));
         }
+        const cleanedVaults = parsed.remote_vaults.map((rv) => ({
+          ...rv,
+          name: (rv.name || '').replace(/\s*\((GitHub|Local)\)\s*/gi, '').trim()
+        }));
         return {
           github_token: (parsed.github_token || '').trim(),
-          remote_vaults: parsed.remote_vaults
+          remote_vaults: cleanedVaults
         };
       } catch (e) {
         return {
@@ -191,7 +195,7 @@
       const id = `gh:${rawId}`;
       const entry = {
         id,
-        name: (vaultObj.name || `☁️ ${vaultObj.repo} (GitHub)`).trim(),
+        name: (vaultObj.name || `☁️ ${vaultObj.repo}`).trim(),
         owner: (vaultObj.owner || '').trim(),
         repo: (vaultObj.repo || '').trim(),
         branch: (vaultObj.branch || 'main').trim(),
@@ -1491,7 +1495,7 @@
             const localData = await localRes.json();
             localReachable = true;
             localVaults = (localData.vaults || []).map((v) =>
-              Object.assign({}, v, { storage_mode: 'local', label: `💻 ${v.name} (Local)` })
+              Object.assign({}, v, { storage_mode: 'local', label: `${v.vault_type === 'personal' ? '🌱' : '💼'} ${v.name}` })
             );
             defaultVault = localData.default_vault;
           }

@@ -480,7 +480,9 @@ function setSoundEnabled(enabled) {
 function updateSoundToggleButton() {
   if (!el.btnSoundToggle) return;
   const enabled = isSoundEnabled();
-  el.btnSoundToggle.textContent = enabled ? '🔊' : '🔇';
+  const icon = enabled ? '🔊' : '🔇';
+  const label = enabled ? 'Sonido: Activado' : 'Sonido: Silenciado';
+  el.btnSoundToggle.innerHTML = `<span class="drawer-sound-icon">${icon}</span> <span class="drawer-sound-label">${label}</span>`;
   el.btnSoundToggle.title = enabled ? 'Sonido activado (clic para silenciar)' : 'Sonido silenciado (clic para activar)';
   el.btnSoundToggle.setAttribute('aria-label', enabled ? 'Silenciar sonidos' : 'Activar sonidos');
 }
@@ -681,12 +683,15 @@ function setupEventListeners() {
 
   // Botón Alternar Sonido
   if (el.btnSoundToggle) {
-    el.btnSoundToggle.addEventListener('click', () => {
+    el.btnSoundToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
       const nextState = !isSoundEnabled();
       setSoundEnabled(nextState);
+      updateSoundToggleButton();
       if (nextState) {
         playTaskDoneSound();
       }
+      showToast(nextState ? '🔊 Sonidos activados' : '🔇 Sonidos silenciados', 'info');
     });
   }
 
@@ -3248,13 +3253,21 @@ async function loadVaults() {
     const localVaults = vaults.filter((v) => v.storage_mode !== 'github');
     const githubVaults = vaults.filter((v) => v.storage_mode === 'github');
 
+    function formatVaultOptionLabel(vault, defaultIcon) {
+      let raw = (vault.label || vault.name || '').replace(/\s*\((GitHub|Local)\)\s*/gi, '').trim();
+      if (!raw.startsWith('☁️') && !raw.startsWith('💻') && !raw.startsWith('🌱') && !raw.startsWith('💼')) {
+        raw = `${defaultIcon} ${raw}`;
+      }
+      return raw;
+    }
+
     if (localVaults.length > 0) {
       const localGroup = document.createElement('optgroup');
       localGroup.label = '💻 Vaults Locales (PC)';
       localVaults.forEach((v) => {
         const opt = document.createElement('option');
         opt.value = v.name;
-        opt.textContent = v.label || `${v.vault_type === 'personal' ? '🌱' : '💼'} ${v.name}`;
+        opt.textContent = formatVaultOptionLabel(v, v.vault_type === 'personal' ? '🌱' : '💼');
         localGroup.appendChild(opt);
       });
       el.vaultSelect.appendChild(localGroup);
@@ -3266,7 +3279,7 @@ async function loadVaults() {
       githubVaults.forEach((v) => {
         const opt = document.createElement('option');
         opt.value = v.name;
-        opt.textContent = v.label || v.name;
+        opt.textContent = formatVaultOptionLabel(v, '☁️');
         ghGroup.appendChild(opt);
       });
       el.vaultSelect.appendChild(ghGroup);
