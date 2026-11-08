@@ -125,6 +125,12 @@ Ejemplos de uso:
     )
 
     parser.add_argument(
+        "--browser-tab",
+        action="store_true",
+        help="Abrir en pestaña de navegador en lugar de ventana de aplicación independiente",
+    )
+
+    parser.add_argument(
         "--test-emoji",
         action="store_true",
         help="Probar patrón de emojis de trabajo",

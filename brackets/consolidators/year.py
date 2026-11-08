@@ -64,14 +64,14 @@ class YearConsolidator(BaseConsolidator):
             print("\n↩️  Operación de borrado cancelada")
             return False
     
-    def consolidate(self, year: int) -> bool:
+    def consolidate(self, year: int, interactive: bool = True, delete_source: bool = False) -> bool:
         """
         Consolida todos los meses de un año en un único archivo.
         El orden es inverso: mes 12 → 01
         """
-        return self.consolidate_year(year)
+        return self.consolidate_year(year, interactive=interactive, delete_source=delete_source)
     
-    def consolidate_year(self, year: int) -> bool:
+    def consolidate_year(self, year: int, interactive: bool = True, delete_source: bool = False) -> bool:
         """
         Consolida todos los meses de un año en un único archivo.
         El orden es inverso: mes 12 → 01
@@ -89,7 +89,7 @@ class YearConsolidator(BaseConsolidator):
         output_filename = f"[{year}].md"
         output_path = os.path.join(self.directory, output_filename)
         
-        if os.path.exists(output_path):
+        if os.path.exists(output_path) and interactive:
             action = self.handle_existing_output(output_filename)
             
             if action == 'delete_only':
@@ -160,11 +160,15 @@ class YearConsolidator(BaseConsolidator):
             print(f"\n✅ Archivo consolidado del año creado: {output_filename}")
             print(f"📍 Ruta: {output_path}")
             
-            # Preguntar si borrar archivos origen (consolidados mensuales)
-            delete = input("\n🗑️  ¿Deseas borrar los archivos consolidados mensuales? (s/N): ").strip().lower()
-            
-            if delete in ['s', 'si', 'sí', 'y', 'yes']:
-                self.delete_source_files(month_files)
+            if interactive:
+                # Preguntar si borrar archivos origen (consolidados mensuales)
+                delete = input("\n🗑️  ¿Deseas borrar los archivos consolidados mensuales? (s/N): ").strip().lower()
+                
+                if delete in ['s', 'si', 'sí', 'y', 'yes']:
+                    self.delete_source_files(month_files)
+            elif delete_source:
+                files_to_delete = [filepath for filepath, _ in month_files]
+                self.delete_files_confirmed(files_to_delete)
             
             return True
         else:

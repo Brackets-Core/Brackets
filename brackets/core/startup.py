@@ -28,8 +28,9 @@ def run_startup_flow(
 
         port = getattr(args, "port", 8080)
         open_browser = not getattr(args, "no_browser", False)
+        app_mode = not getattr(args, "browser_tab", False)
         target_root = vault_arg or current_dir
-        run_web_server(port=port, workspace_root=target_root, open_browser=open_browser)
+        run_web_server(port=port, workspace_root=target_root, open_browser=open_browser, app_mode=app_mode)
         return 0
 
     has_flags = has_action_flags_fn(args)

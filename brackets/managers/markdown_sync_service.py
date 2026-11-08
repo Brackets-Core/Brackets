@@ -293,16 +293,26 @@ class MarkdownSyncService:
                         week_num=week_num
                     )
 
-    def _find_task_for_day(self, day: DaySchedule, week: WeekSchedule, title: str) -> Optional[Task]:
+    def _find_task_for_day(
+        self,
+        day: DaySchedule,
+        week: WeekSchedule,
+        title: str,
+        claimed_ids: Optional[Set[str]] = None
+    ) -> Optional[Task]:
         """
         Busca inteligentemente una tarea con ese título priorizando:
         1. Tareas asignadas a este día concreto.
-        2. Tareas en otros días de esta misma semana o en week_task_ids.
-        3. Tareas pendientes/canceladas globales no resueltas (sin recurring_id).
-        Evita reutilizar tareas recurrentes o completadas de semanas/meses anteriores.
-        Soporta emparejamiento con y sin premojis / prefijos de reunión.
+        2. Si coincide con una tarea recurrente activa, busca la instancia específica de este día
+           o una instancia no reclamada/no asignada a otro día.
+        3. Tareas en otros días de esta misma semana o en week_task_ids (siempre que no sean
+           recurrentes y no estén ya reclamadas).
+        4. Tareas pendientes/canceladas globales no resueltas (sin recurring_id).
         """
         from brackets.models.task_types import TaskTypeRegistry
+
+        if claimed_ids is None:
+            claimed_ids = set()
 
         clean_target = title.replace("~~", "").strip()
         _, clean_norm_target = TaskTypeRegistry.detect_task_type_and_clean_title(clean_target)
@@ -321,36 +331,61 @@ class MarkdownSyncService:
 
         # 1. En este día
         for tid in day.task_ids:
+            if tid in claimed_ids:
+                continue
             t = self.manager.tasks.get(tid)
             if _is_match(t):
                 return t
 
-        # 2. En otros días de esta semana
+        # Comprobar si coincide con una recurrencia activa
+        matching_rec = next(
+            (r for r in self.manager.list_recurring_tasks(active_only=True)
+             if _is_match(Task(id="", title=r.title))),
+            None
+        )
+
+        if matching_rec:
+            # 2a. Para recurrentes: buscar instancia ya existente para este día concreto
+            for tid in day.task_ids:
+                t = self.manager.tasks.get(tid)
+                if t and t.recurring_id == matching_rec.id and tid not in claimed_ids:
+                    return t
+
+            # Buscar en manager.tasks una instancia libre que no esté reclamada
+            # ni asignada a ningún otro día de la semana actual
+            for t in self.manager.tasks.values():
+                if t.recurring_id == matching_rec.id and t.id not in claimed_ids:
+                    is_in_other_day = any(
+                        t.id in od.task_ids for od in week.days if od.day_number != day.day_number
+                    )
+                    if not is_in_other_day:
+                        return t
+
+            # Si no hay instancia libre disponible para este día, retornar None
+            # para que el reconciliador cree una instancia limpia exclusiva para este día
+            return None
+
+        # 3. En otros días de esta semana (SOLO para tareas no recurrentes movidas/arrastradas)
         for other_day in week.days:
             if other_day.day_number != day.day_number:
                 for tid in other_day.task_ids:
+                    if tid in claimed_ids:
+                        continue
                     t = self.manager.tasks.get(tid)
-                    if _is_match(t):
+                    if _is_match(t) and not t.is_recurring:
                         return t
 
-        # 3. En tareas de la semana
+        # 4. En tareas de la semana
         for tid in week.week_task_ids:
+            if tid in claimed_ids:
+                continue
             t = self.manager.tasks.get(tid)
-            if _is_match(t):
-                return t
+            if _is_match(t) and not t.is_recurring:
+                        return t
 
-        # 4. Comprobar si coincide con una tarea recurrente activa
-        matching_rec = next((r for r in self.manager.list_recurring_tasks() if _is_match(Task(id="", title=r.title))), None)
-        if matching_rec:
-            # Buscar una tarea existente asociada a esta recurrencia
-            rec_task = next((t for t in self.manager.tasks.values() if t.recurring_id == matching_rec.id), None)
-            if rec_task:
-                return rec_task
-            return None
-
-        # 5. Tarea pendiente o cancelada global no asignada a otra semana
+        # 5. Tarea pendiente o cancelada global no asignada a otra semana ni recurrente
         for t in self.manager.tasks.values():
-            if _is_match(t) and (t.is_pending or t.is_cancelled):
+            if t.id not in claimed_ids and _is_match(t) and not t.is_recurring and (t.is_pending or t.is_cancelled):
                 return t
 
         return None
@@ -366,7 +401,7 @@ class MarkdownSyncService:
     ) -> None:
         """
         Reconcilia todos los días de la semana sincronizando tareas [x], [ ] y canceladas ~~...~~,
-        evitando duplicidades entre días para una misma tarea arrastrada.
+        evitando duplicidades entre días para una misma tarea arrastrada sin afectar recurrentes.
         Siempre coloca primero las tareas pendientes, luego completadas y canceladas.
         """
         from brackets.models.task_types import TaskTypeRegistry
@@ -391,12 +426,12 @@ class MarkdownSyncService:
 
         ordered_day_numbers = [d.day_number for d in week.days]
 
-        pending_task_latest_day: Dict[str, int] = {}
+        pending_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
+        done_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
+        cancelled_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
         task_types_by_title: Dict[str, str] = {}
-        done_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
-        cancelled_tasks_by_day: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
-
         descriptions_by_title: Dict[str, Optional[str]] = {}
+
         for day_num in ordered_day_numbers:
             tuples = days_dict.get(day_num, [])
             for item in tuples:
@@ -409,97 +444,136 @@ class MarkdownSyncService:
                     status, title = item
                     t_type = "task"
                     desc = None
-                if desc is not None and title.strip():
-                    descriptions_by_title[title.strip()] = desc
                 clean_title = title.strip()
                 if not clean_title:
                     continue
+                if desc is not None:
+                    descriptions_by_title[clean_title] = desc
                 if t_type and t_type != "task":
                     task_types_by_title[clean_title] = t_type
+
                 if status == "done":
-                    done_tasks_by_day.setdefault(day_num, []).append(clean_title)
+                    done_by_day[day_num].append(clean_title)
                 elif status == "cancelled":
-                    cancelled_tasks_by_day.setdefault(day_num, []).append(clean_title)
+                    cancelled_by_day[day_num].append(clean_title)
                 else:
-                    # Guardar el último día donde aparece como pendiente
-                    pending_task_latest_day[clean_title] = day_num
+                    pending_by_day[day_num].append(clean_title)
+
+        # Identificar qué títulos corresponden a tareas recurrentes activas
+        active_recs = self.manager.list_recurring_tasks(active_only=True)
+        recurring_titles = set()
+        for r in active_recs:
+            recurring_titles.add(r.title)
+            _, clean_r = TaskTypeRegistry.detect_task_type_and_clean_title(r.title)
+            recurring_titles.add(clean_r)
+            _, clean_r_no_proj = BitacoraMarkdownParser.parse_project_tag(clean_r)
+            recurring_titles.add(clean_r_no_proj)
+
+        def _is_recurring(t_title: str) -> bool:
+            clean_t = t_title.replace("~~", "").strip()
+            _, clean_norm = TaskTypeRegistry.detect_task_type_and_clean_title(clean_t)
+            _, clean_no_proj = BitacoraMarkdownParser.parse_project_tag(clean_norm)
+            return (
+                clean_t in recurring_titles or
+                clean_norm in recurring_titles or
+                clean_no_proj in recurring_titles
+            )
+
+        # Deduplicar solo tareas PENDIENTES NO RECURRENTES si aparecen copiadas en múltiples días
+        # (si el usuario arrastró o copió una tarea normal hacia adelante, mantenerla en el último día)
+        non_recurring_pending_counts: Dict[str, List[int]] = {}
+        for d_num in ordered_day_numbers:
+            for t_title in pending_by_day[d_num]:
+                if not _is_recurring(t_title):
+                    non_recurring_pending_counts.setdefault(t_title, []).append(d_num)
+
+        for t_title, days_with_title in non_recurring_pending_counts.items():
+            if len(days_with_title) > 1:
+                latest_day = days_with_title[-1]
+                for d_num in days_with_title[:-1]:
+                    pending_by_day[d_num] = [t for t in pending_by_day[d_num] if t != t_title]
 
         new_day_task_ids: Dict[int, List[str]] = {d_num: [] for d_num in ordered_day_numbers}
+        claimed_ids: Set[str] = set()
 
-        # 1. Reconciliar tareas PENDIENTES ([ ]) PRIMERO
-        for title, latest_day_num in pending_task_latest_day.items():
-            # Si se marcó como completada o cancelada, no crearla/mantenerla como pendiente
-            if any(title in titles for titles in done_tasks_by_day.values()):
-                continue
-            if any(title in titles for titles in cancelled_tasks_by_day.values()):
-                continue
-
-            target_day = day_by_number.get(latest_day_num)
+        # 1. Reconciliar tareas PENDIENTES ([ ]) día por día
+        for day_num in ordered_day_numbers:
+            target_day = day_by_number.get(day_num)
             if not target_day:
                 continue
+            for title in pending_by_day[day_num]:
+                if title in done_by_day[day_num] or title in cancelled_by_day[day_num]:
+                    continue
 
-            clean_target = title.replace("~~", "").strip()
-            proj_tag, _ = BitacoraMarkdownParser.parse_project_tag(clean_target)
-            if proj_tag:
-                self.manager.ensure_project(proj_tag)
-
-            detected_type = task_types_by_title.get(title, "task")
-            matched_task = self._find_task_for_day(target_day, week, title)
-            if not matched_task:
-                rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
-                rec_type = rec_info.task_type if rec_info else None
-                final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
-                desc_val = descriptions_by_title.get(title) or descriptions_by_title.get(clean_target)
-                matched_task = self.manager.create_task(
-                    title=title,
-                    project_id=proj_tag or (rec_info.project_id if rec_info else None),
-                    year=year,
-                    week_num=week_num,
-                    day_number=latest_day_num,
-                    recurring_id=rec_info.id if rec_info else None,
-                    task_type=final_task_type,
-                    status="pending",
-                    description=desc_val
-                )
-            else:
-                desc_val = descriptions_by_title.get(title) or descriptions_by_title.get(clean_target)
-                if desc_val is not None:
-                    matched_task.description = desc_val
-                if proj_tag and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
-                    matched_task.project_id = proj_tag
-                if "~~" in matched_task.title:
-                    matched_task.title = title
-                if matched_task.title != title and TaskTypeRegistry.detect_task_type_and_clean_title(matched_task.title)[1] == title:
-                    matched_task.title = title
-                if detected_type != "task":
-                    matched_task.task_type = detected_type
-                if matched_task.is_done or matched_task.is_cancelled:
-                    matched_task.status = "pending"
-                    matched_task.completed_at = None
-                if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
-                    rec = self.manager.recurring_tasks[matched_task.recurring_id]
-                    if rec.task_type != "task" and detected_type == "task":
-                        matched_task.task_type = rec.task_type
-                    if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
-                        matched_task.project_id = rec.project_id
-
-            new_day_task_ids[latest_day_num].append(matched_task.id)
-
-        # 2. Reconciliar tareas COMPLETADAS ([x]) por día
-        for day_num, done_titles in done_tasks_by_day.items():
-            day = day_by_number.get(day_num)
-            if not day:
-                continue
-            for title in done_titles:
                 clean_target = title.replace("~~", "").strip()
                 proj_tag, _ = BitacoraMarkdownParser.parse_project_tag(clean_target)
                 if proj_tag:
                     self.manager.ensure_project(proj_tag)
 
                 detected_type = task_types_by_title.get(title, "task")
-                matched_task = self._find_task_for_day(day, week, title)
+                matched_task = self._find_task_for_day(target_day, week, title, claimed_ids=claimed_ids)
                 if not matched_task:
-                    rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+                    rec_info = next(
+                        (r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target),
+                        None
+                    )
+                    rec_type = rec_info.task_type if rec_info else None
+                    final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
+                    desc_val = descriptions_by_title.get(title) or descriptions_by_title.get(clean_target)
+                    matched_task = self.manager.create_task(
+                        title=title,
+                        project_id=proj_tag or (rec_info.project_id if rec_info else None),
+                        year=year,
+                        week_num=week_num,
+                        day_number=day_num,
+                        recurring_id=rec_info.id if rec_info else None,
+                        task_type=final_task_type,
+                        status="pending",
+                        description=desc_val
+                    )
+                else:
+                    desc_val = descriptions_by_title.get(title) or descriptions_by_title.get(clean_target)
+                    if desc_val is not None:
+                        matched_task.description = desc_val
+                    if proj_tag and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
+                        matched_task.project_id = proj_tag
+                    if "~~" in matched_task.title:
+                        matched_task.title = title
+                    if matched_task.title != title and TaskTypeRegistry.detect_task_type_and_clean_title(matched_task.title)[1] == title:
+                        matched_task.title = title
+                    if detected_type != "task":
+                        matched_task.task_type = detected_type
+                    if matched_task.is_done or matched_task.is_cancelled:
+                        matched_task.status = "pending"
+                        matched_task.completed_at = None
+                    if matched_task.recurring_id and matched_task.recurring_id in self.manager.recurring_tasks:
+                        rec = self.manager.recurring_tasks[matched_task.recurring_id]
+                        if rec.task_type != "task" and detected_type == "task":
+                            matched_task.task_type = rec.task_type
+                        if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
+                            matched_task.project_id = rec.project_id
+
+                claimed_ids.add(matched_task.id)
+                new_day_task_ids[day_num].append(matched_task.id)
+
+        # 2. Reconciliar tareas COMPLETADAS ([x]) día por día
+        for day_num in ordered_day_numbers:
+            target_day = day_by_number.get(day_num)
+            if not target_day:
+                continue
+            for title in done_by_day[day_num]:
+                clean_target = title.replace("~~", "").strip()
+                proj_tag, _ = BitacoraMarkdownParser.parse_project_tag(clean_target)
+                if proj_tag:
+                    self.manager.ensure_project(proj_tag)
+
+                detected_type = task_types_by_title.get(title, "task")
+                matched_task = self._find_task_for_day(target_day, week, title, claimed_ids=claimed_ids)
+                if not matched_task:
+                    rec_info = next(
+                        (r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target),
+                        None
+                    )
                     rec_type = rec_info.task_type if rec_info else None
                     final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
                     desc_val = descriptions_by_title.get(title) or descriptions_by_title.get(clean_target)
@@ -536,23 +610,27 @@ class MarkdownSyncService:
                         if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
                             matched_task.project_id = rec.project_id
 
+                claimed_ids.add(matched_task.id)
                 new_day_task_ids[day_num].append(matched_task.id)
 
-        # 3. Reconciliar tareas CANCELADAS ([ ] ~~...~~) por día
-        for day_num, cancelled_titles in cancelled_tasks_by_day.items():
-            day = day_by_number.get(day_num)
-            if not day:
+        # 3. Reconciliar tareas CANCELADAS ([ ] ~~...~~) día por día
+        for day_num in ordered_day_numbers:
+            target_day = day_by_number.get(day_num)
+            if not target_day:
                 continue
-            for title in cancelled_titles:
+            for title in cancelled_by_day[day_num]:
                 clean_target = title.replace("~~", "").strip()
                 proj_tag, _ = BitacoraMarkdownParser.parse_project_tag(clean_target)
                 if proj_tag:
                     self.manager.ensure_project(proj_tag)
 
                 detected_type = task_types_by_title.get(title, "task")
-                matched_task = self._find_task_for_day(day, week, title)
+                matched_task = self._find_task_for_day(target_day, week, title, claimed_ids=claimed_ids)
                 if not matched_task:
-                    rec_info = next((r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target), None)
+                    rec_info = next(
+                        (r for r in self.manager.list_recurring_tasks() if r.title == title or r.title == clean_target),
+                        None
+                    )
                     rec_type = rec_info.task_type if rec_info else None
                     final_task_type = detected_type if detected_type != "task" else (rec_type or "task")
                     desc_val = descriptions_by_title.get(title) or descriptions_by_title.get(clean_target)
@@ -594,6 +672,7 @@ class MarkdownSyncService:
                         if rec.project_id and (not matched_task.project_id or matched_task.project_id == "POR_ASIGNAR"):
                             matched_task.project_id = rec.project_id
 
+                claimed_ids.add(matched_task.id)
                 new_day_task_ids[day_num].append(matched_task.id)
 
         # 4. Asignar los task_ids a cada día, deduplicar preservando orden y remover de tareas semanales

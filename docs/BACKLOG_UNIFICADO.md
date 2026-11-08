@@ -153,3 +153,5 @@ Regla para marcar una tarea como resuelta:
 
 - Debe existir evidencia en codigo (archivo/metodo) y una verificacion ejecutable (test o comando reproducible).
 
+
+- [ ] **Pomodoro Flotante en PWA (Web Hub)**: Al trabajar en una tarea, abrir temporizador Pomodoro flotante con fondo desenfocado (`backdrop-filter: blur`) y tracking de sesión.

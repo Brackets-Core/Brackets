@@ -24,18 +24,33 @@
     <!-- Header -->
     <header class="app-header">
       <div class="brand-section">
+        <button id="btnHamburger" class="btn-icon btn-hamburger" type="button" title="Menú principal (Acciones CLI)" aria-label="Menú principal" aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
         <img src="icon-192.svg" alt="Brackets Logo" class="brand-logo">
         <h1 class="brand-title">Brackets</h1>
       </div>
 
       <div class="header-controls">
-        <button id="btnPwaInstall" class="btn-pwa-install" title="Instalar Brackets como App de escritorio">
+        <button id="btnPwaInstall" class="btn-pwa-install" style="display: none;" title="Instalar Brackets como App de escritorio">
           📲 Instalar App
         </button>
 
-        <select id="vaultSelect" class="vault-select" title="Seleccionar Vault">
+        <select id="vaultSelect" class="vault-select" title="Seleccionar Vault (Local o GitHub)">
           <!-- Opciones dinámicas inyectadas por JS -->
         </select>
+
+        <button id="btnGitHubConfig" class="btn-storage-mode" type="button" title="Configurar GitHub REST API v3 (Token PAT y Repositorios Remotos)">
+          ☁️ GitHub
+        </button>
+
+        <button id="btnSoundToggle" class="btn-icon" title="Sonido activado (clic para silenciar)" aria-label="Alternar sonido">
+          🔊
+        </button>
 
         <button id="btnSync" class="btn-icon" title="Sincronizar Markdown y YAML">
           🔄
@@ -43,12 +58,30 @@
       </div>
     </header>
 
+    <!-- Hamburger Menu Drawer & Backdrop -->
+    <div id="hamburgerBackdrop" class="hamburger-backdrop" style="display: none;"></div>
+    <aside id="hamburgerDrawer" class="hamburger-drawer" style="display: none;" aria-label="Menú principal de opciones">
+      <div class="hamburger-drawer-header">
+        <div class="hamburger-drawer-title">
+          <img src="icon-192.svg" alt="Brackets Logo" class="drawer-logo">
+          <span>Menú de Brackets</span>
+        </div>
+        <button id="btnCloseHamburger" class="btn-drawer-close" type="button" aria-label="Cerrar menú">✕</button>
+      </div>
+      <div id="hamburgerMenuContent" class="hamburger-menu-content">
+        <!-- Grupos e ítems renderizados dinámicamente desde menu_config.yaml -->
+      </div>
+    </aside>
+
     <!-- Week Banner -->
     <div class="week-banner">
-      <div id="weekBadge" class="week-badge">
-        🗓️ Cargando semana...
+      <div class="week-nav-group">
+        <button id="btnPrevWeek" class="btn-week-arrow" type="button" title="Semana anterior">◀</button>
+        <div id="weekBadge" class="week-badge" title="Clic para cambiar de semana">
+          🗓️ Cargando semana...
+        </div>
+        <button id="btnNextWeek" class="btn-week-arrow" type="button" title="Semana siguiente">▶</button>
       </div>
-      <div id="weightBadge" class="weight-badge" style="display: none;"></div>
     </div>
 
     <!-- Days Strip / Carousel -->
@@ -56,82 +89,275 @@
       <!-- Días inyectados dinámicamente -->
     </div>
 
-    <!-- Active Day Header & Location Picker -->
-    <div class="active-day-header">
-      <div class="active-day-info">
-        <span id="activeDayTitle" class="active-day-title">Día activo</span>
-      </div>
-      <div id="locGroup" class="location-picker-group">
-        <!-- Botones de ubicación inyectados dinámicamente -->
-      </div>
-    </div>
+    <!-- Container for Reorderable Sections -->
+    <div id="sectionsContainer" class="sections-container">
+      <!-- Today Tasks Section -->
+      <section class="collapsible-section" data-section="today-tasks">
+        <div class="section-header-row">
+          <span class="section-drag-handle" draggable="true" title="Arrastrar para mover sección">⋮⋮</span>
+          <button class="section-header-btn" type="button" aria-expanded="true" aria-controls="todayTasksContent">
+            <h2 class="section-title">
+              <span>📋</span> Tareas de Hoy
+              <span id="todayCountBadge" class="task-count-badge empty">[0/0]</span>
+            </h2>
+            <span class="collapse-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="section-reorder-btns">
+            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
+            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
+          </div>
+        </div>
+      <div id="todayTasksContent" class="section-content">
+        <!-- Creación integrada de Tarea de Hoy -->
+        <div class="inline-create-card" id="createTodayTaskCard">
+          <div class="inline-create-main">
+            <span class="inline-create-icon">📋</span>
+            <input 
+              type="text" 
+              id="inputTodayTitle" 
+              class="inline-create-input" 
+              placeholder="Nueva tarea para hoy... (ej: Reunión: Sync #[PROYECTO])" 
+              autocomplete="off"
+            >
+            <button type="button" id="btnToggleTodayStatus" class="btn-status-pill" title="Alternar estado: Pendiente [ ] / Hecha [x]">
+              Pendiente [ ]
+            </button>
+            <button type="button" id="btnToggleTodayDesc" class="btn-icon-pill" title="Añadir descripción o viñetas">
+              💬
+            </button>
+            <button type="button" id="btnSubmitTodayTask" class="btn-inline-submit">
+              Añadir
+            </button>
+          </div>
+          <div id="descBoxTodayTask" class="inline-create-desc" style="display: none;">
+            <textarea 
+              id="descTodayText" 
+              class="inline-create-textarea" 
+              placeholder="💬 Descripción / notas de la tarea (opcional, viñetas)... (Ctrl+Enter para guardar)" 
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
 
-    <!-- Quick Task Capture Card -->
-    <section class="quick-capture-card">
-      <div class="capture-header">
-        <span class="capture-label">⚡ Captura Rápida</span>
-        <div class="status-toggle-group">
-          <button id="btnTogglePending" class="btn-status-toggle active" type="button">
-            Pendiente [ ]
-          </button>
-          <button id="btnToggleDone" class="btn-status-toggle" type="button" title="Registrar trabajo que ya se completó">
-            ✓ Hecha [x]
-          </button>
+        <div id="todayTasksList" class="task-list">
+          <!-- Tareas inyectadas dinámicamente -->
         </div>
       </div>
+    </section>
 
-      <div class="capture-input-row">
-        <input 
-          id="taskInput" 
-          class="task-input" 
-          type="text" 
-          placeholder="Nueva tarea para hoy... (ej: Reunión: Sync #[PROYECTO])"
-          autocomplete="off"
-        >
-        <button id="btnAddTask" class="btn-add-task" type="button">
-          Añadir Pendiente [ ]
-        </button>
-      </div>
+      <!-- Week Topics Section -->
+      <section class="collapsible-section" data-section="week-topics">
+        <div class="section-header-row">
+          <span class="section-drag-handle" draggable="true" title="Arrastrar para mover sección">⋮⋮</span>
+          <button class="section-header-btn" type="button" aria-expanded="true" aria-controls="weekTopicsContent">
+            <h2 class="section-title">
+              <span>🎯</span> Topics de la Semana
+              <span id="topicsCountBadge" class="task-count-badge empty">[0]</span>
+            </h2>
+            <span class="collapse-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="section-reorder-btns">
+            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
+            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
+          </div>
+        </div>
+      <div id="weekTopicsContent" class="section-content">
+        <!-- Creación integrada de Topic -->
+        <div class="inline-create-card" id="createTopicCard">
+          <div class="inline-create-main">
+            <span class="inline-create-icon">🎯</span>
+            <input 
+              type="text" 
+              id="inputTopicTitle" 
+              class="inline-create-input" 
+              placeholder="Nuevo topic de la semana... (ej: Core Engine #[Core])" 
+              autocomplete="off"
+            >
+            <button type="button" id="btnSubmitTopic" class="btn-inline-submit">
+              Añadir Topic
+            </button>
+          </div>
+        </div>
 
-      <div class="capture-desc-row">
-        <textarea 
-          id="descTextarea" 
-          class="desc-textarea" 
-          placeholder="💬 Descripción / notas de la tarea (opcional, sub-viñetas)... (Ctrl+Enter para guardar)"
-          rows="2"
-        ></textarea>
+        <div id="topicsContainer" class="topics-container">
+          <!-- Topics inyectados dinámicamente -->
+        </div>
       </div>
     </section>
 
-    <!-- Today Tasks Section -->
-    <section>
-      <h2 class="section-title">
-        <span>📋</span> Tareas de Hoy
-      </h2>
-      <div id="todayTasksList" class="task-list">
-        <!-- Tareas inyectadas dinámicamente -->
+      <!-- Week Tasks Section -->
+      <section class="collapsible-section" data-section="week-tasks">
+        <div class="section-header-row">
+          <span class="section-drag-handle" draggable="true" title="Arrastrar para mover sección">⋮⋮</span>
+          <button class="section-header-btn" type="button" aria-expanded="true" aria-controls="weekTasksContent">
+            <h2 class="section-title">
+              <span>⏳</span> Tareas de la Semana (Sin día fijo)
+              <span id="weekCountBadge" class="task-count-badge empty">[0/0]</span>
+            </h2>
+            <span class="collapse-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="section-reorder-btns">
+            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
+            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
+          </div>
+        </div>
+      <div id="weekTasksContent" class="section-content">
+        <!-- Creación integrada de Tarea Semanal -->
+        <div class="inline-create-card" id="createWeekTaskCard">
+          <div class="inline-create-main">
+            <span class="inline-create-icon">⏳</span>
+            <input 
+              type="text" 
+              id="inputWeekTitle" 
+              class="inline-create-input" 
+              placeholder="Nueva tarea semanal (sin día fijo)..." 
+              autocomplete="off"
+            >
+            <button type="button" id="btnToggleWeekStatus" class="btn-status-pill" title="Alternar estado: Pendiente [ ] / Hecha [x]">
+              Pendiente [ ]
+            </button>
+            <button type="button" id="btnToggleWeekDesc" class="btn-icon-pill" title="Añadir descripción o viñetas">
+              💬
+            </button>
+            <button type="button" id="btnSubmitWeekTask" class="btn-inline-submit">
+              Añadir
+            </button>
+          </div>
+          <div id="descBoxWeekTask" class="inline-create-desc" style="display: none;">
+            <textarea 
+              id="descWeekText" 
+              class="inline-create-textarea" 
+              placeholder="💬 Descripción / notas de la tarea (opcional, viñetas)... (Ctrl+Enter para guardar)" 
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
+
+        <div id="weekTasksList" class="task-list">
+          <!-- Tareas semanales inyectadas dinámicamente -->
+        </div>
       </div>
     </section>
 
-    <!-- Week Tasks Section -->
-    <section>
-      <h2 class="section-title">
-        <span>⏳</span> Tareas de la Semana (Sin día fijo)
-      </h2>
-      <div id="weekTasksList" class="task-list">
-        <!-- Tareas semanales inyectadas dinámicamente -->
+      <!-- Week Notes Section -->
+      <section class="collapsible-section" data-section="week-notes">
+        <div class="section-header-row">
+          <span class="section-drag-handle" draggable="true" title="Arrastrar para mover sección">⋮⋮</span>
+          <button class="section-header-btn" type="button" aria-expanded="true" aria-controls="weekNotesContent">
+            <h2 class="section-title">
+              <span>📝</span> Notas de la Semana
+              <span id="notesCountBadge" class="task-count-badge empty">[0]</span>
+            </h2>
+            <span class="collapse-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="section-reorder-btns">
+            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
+            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
+          </div>
+        </div>
+      <div id="weekNotesContent" class="section-content">
+        <!-- Creación integrada de Nota -->
+        <div class="inline-create-card" id="createNoteCard">
+          <div class="inline-create-main">
+            <span class="inline-create-icon">📝</span>
+            <input 
+              type="text" 
+              id="inputNoteTitle" 
+              class="inline-create-input" 
+              placeholder="Título de la nota... (ej: Incidencia servidor InfluxDB)" 
+              autocomplete="off"
+            >
+            <button type="button" id="btnToggleNoteDesc" class="btn-icon-pill" title="Añadir contenido / viñetas">
+              💬
+            </button>
+            <button type="button" id="btnSubmitNote" class="btn-inline-submit">
+              Añadir Nota
+            </button>
+          </div>
+          <div id="descBoxNote" class="inline-create-desc" style="display: none;">
+            <textarea 
+              id="descNoteText" 
+              class="inline-create-textarea" 
+              placeholder="Contenido / notas (viñetas, una por línea)... (Ctrl+Enter para guardar)" 
+              rows="3"
+            ></textarea>
+          </div>
+        </div>
+
+        <div id="notesContainer" class="notes-container">
+          <!-- Notas inyectadas dinámicamente -->
+        </div>
       </div>
     </section>
 
-    <!-- Week Notes Section -->
-    <section>
-      <h2 class="section-title">
-        <span>📝</span> Notas de la Semana
-      </h2>
-      <div id="notesContainer" class="notes-container">
-        <!-- Notas inyectadas dinámicamente -->
+      <!-- Week Definitions Section -->
+      <section class="collapsible-section" data-section="week-definitions">
+        <div class="section-header-row">
+          <span class="section-drag-handle" draggable="true" title="Arrastrar para mover sección">⋮⋮</span>
+          <button class="section-header-btn" type="button" aria-expanded="true" aria-controls="weekDefsContent">
+            <h2 class="section-title">
+              <span>🎫</span> Definiciones y Enlaces
+              <span id="defsCountBadge" class="task-count-badge empty">[0]</span>
+            </h2>
+            <span class="collapse-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          <div class="section-reorder-btns">
+            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
+            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
+          </div>
+        </div>
+      <div id="weekDefsContent" class="section-content">
+        <!-- Creación integrada de Definición / Enlace -->
+        <div class="inline-create-card" id="createDefCard">
+          <div class="inline-create-main def-create-main">
+            <span class="inline-create-icon">🎫</span>
+            <input 
+              type="text" 
+              id="inputDefCode" 
+              class="inline-create-input def-code-input" 
+              placeholder="Código o Ticket... (ej: SYSC-73125 o 📂DOCS)" 
+              autocomplete="off"
+            >
+            <input 
+              type="text" 
+              id="inputDefUrl" 
+              class="inline-create-input def-url-input" 
+              placeholder="URL... (opcional para tickets Jira)" 
+              autocomplete="off"
+            >
+            <button type="button" id="btnSubmitDef" class="btn-inline-submit">
+              Guardar Enlace
+            </button>
+          </div>
+        </div>
+
+        <div id="definitionsContainer" class="definitions-container">
+          <!-- Definiciones inyectadas dinámicamente -->
+        </div>
       </div>
     </section>
+  </div>
+  <!-- End sectionsContainer -->
 
     <!-- Footer -->
     <footer class="app-footer">
@@ -140,6 +366,49 @@
     </footer>
   </div>
 
+  <!-- Toast Notifications Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <!-- Universal Modal Overlay for CLI Actions -->
+  <div id="appModalOverlay" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modalTitle" class="modal-title">Acción</h3>
+        <button id="btnCloseModal" class="btn-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Floating Pomodoro Timer Widget -->
+  <div id="pomodoroBackdrop" class="pomodoro-backdrop" style="display: none;"></div>
+  <div id="pomodoroFloatingWidget" class="pomodoro-floating-widget" style="display: none;">
+    <div class="pomo-header" id="pomoDragHandle">
+      <span class="pomo-title">🍅 Pomodoro Focus</span>
+      <div class="pomo-header-btns">
+        <button id="btnPomoBlurToggle" class="btn-pomo-icon" type="button" title="Difuminar fondo (Modo Focus)">🌫️</button>
+        <button id="btnPomoMinimize" class="btn-pomo-icon" type="button" title="Minimizar / Expandir">_</button>
+        <button id="btnPomoClose" class="btn-pomo-icon" type="button" title="Cerrar Pomodoro">✕</button>
+      </div>
+    </div>
+    <div id="pomoBody" class="pomo-body">
+      <div class="pomo-mode-tabs">
+        <button type="button" class="btn-pomo-mode active" data-minutes="25" data-mode="work">Trabajo (25m)</button>
+        <button type="button" class="btn-pomo-mode" data-minutes="5" data-mode="short">Pausa (5m)</button>
+        <button type="button" class="btn-pomo-mode" data-minutes="15" data-mode="long">Larga (15m)</button>
+      </div>
+      <div id="pomoTimeDisplay" class="pomo-time-display">25:00</div>
+      <select id="pomoTaskSelect" class="pomo-task-select">
+        <option value="">🎯 Sin tarea específica seleccionada</option>
+      </select>
+      <div class="pomo-controls">
+        <button id="btnPomoStartPause" type="button" class="btn-pomo-primary">▶ Iniciar</button>
+        <button id="btnPomoReset" type="button" class="btn-pomo-secondary">↺ Reiniciar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="github_adapter.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

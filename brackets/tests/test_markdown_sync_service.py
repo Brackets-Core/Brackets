@@ -371,6 +371,35 @@ class TestMarkdownSyncService(unittest.TestCase):
         self.assertFalse(task.is_cancelled)
 
 
+    def test_sync_week_preserves_multiday_recurring_tasks(self):
+        """Verifica que si una tarea recurrente aparece en varios días de la semana, no se borra ni se colapsa."""
+        # 1. Crear tarea recurrente multidía
+        rec = self.manager.create_recurring_task(
+            title="Daily Standup",
+            recurrence_type="weekly_days",
+            days_of_week=[0, 1]
+        )
+        # 2. Modificar markdown añadiendo Daily Standup en día 24 y día 25
+        with open(self.md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        content_modified = content.replace("## 🏠24\n  - [ ] Tarea Base Día 24", "## 🏠24\n  - [ ] Tarea Base Día 24\n  - [ ] Daily Standup")
+        content_modified = content_modified.replace("## 🚗25", "## 🚗25\n  - [ ] Daily Standup")
+        with open(self.md_path, "w", encoding="utf-8") as f:
+            f.write(content_modified)
+
+        synced = self.sync_service.sync_week_from_markdown(self.md_path, 2026, 35)
+        self.assertTrue(synced)
+
+        day24 = next(d for d in self.week.days if d.day_number == 24)
+        day25 = next(d for d in self.week.days if d.day_number == 25)
+
+        # Debe estar en día 24 Y en día 25
+        tasks_24 = [self.manager.tasks[tid].title for tid in day24.task_ids]
+        tasks_25 = [self.manager.tasks[tid].title for tid in day25.task_ids]
+        self.assertIn("Daily Standup", tasks_24)
+        self.assertIn("Daily Standup", tasks_25)
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -1,10 +1,11 @@
 // Service Worker de Brackets Web Hub
 // Cachea la carcasa (App Shell) para apertura instantánea en 0 ms.
-const CACHE_NAME = 'brackets-shell-v1';
+const CACHE_NAME = 'brackets-shell-v2';
 const SHELL_ASSETS = [
   './',
   './index.html',
   './style.css',
+  './github_adapter.js',
   './app.js',
   './manifest.webmanifest',
   './icon-192.svg',
@@ -29,8 +30,12 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Las llamadas a la API siempre van a la red en vivo
-  if (url.pathname.startsWith('/api/')) {
+  // Las llamadas a la API local o a GitHub REST API siempre van a la red en vivo
+  if (
+    req.method !== 'GET' ||
+    url.pathname.startsWith('/api/') ||
+    url.hostname === 'api.github.com'
+  ) {
     return;
   }
 

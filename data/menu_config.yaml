@@ -416,3 +416,77 @@ menus:
         keys: ["2", "t", "all"]
         action: exec
         command: sync_all_weeks
+
+  web_top_menu:
+    title: "MENÚ SUPERIOR WEB HUB"
+    groups:
+      - id: bitacoras
+        label: "📅 Bitácoras"
+        items:
+          - id: next_weekly
+            label: "➕ Nueva Bitácora Semanal (arrastrar pendientes)"
+            command: next_weekly
+          - id: switch_week
+            label: "🗓️ Cambiar / Navegar Semana"
+            command: switch_week
+          - id: add_extra_day
+            label: "🛠️ Añadir Día Extra / Intervención"
+            command: add_extra_day
+
+      - id: sync_recurring
+        label: "🔄 Sync y Recurrentes"
+        items:
+          - id: sync_current_week
+            label: "🔄 Sincronizar Semana Actual (.md ↔ YAML)"
+            command: sync_current_week
+          - id: sync_all_weeks
+            label: "🌐 Sincronizar TODAS las Semanas del Vault"
+            command: sync_all_weeks
+          - id: apply_recurring
+            label: "⚡ Inyectar Tareas Recurrentes en esta Semana"
+            command: apply_recurring
+          - id: manage_recurring
+            label: "🔁 Gestionar Tareas Recurrentes y Reuniones"
+            command: manage_recurring
+          - id: apply_calendar
+            label: "📆 Reaplicar Calendario Laboral a esta Semana"
+            command: apply_calendar
+
+      - id: projects_backlog
+        label: "📁 Proyectos y Backlog"
+        items:
+          - id: projects_overview
+            label: "📊 Estado Global de Proyectos y Métricas"
+            command: projects_overview
+          - id: backlog_manager
+            label: "🗂️ Gestionar Backlog (Sin fecha asignada)"
+            command: backlog_manager
+          - id: ideas_manager
+            label: "💡 Gestionar Ideas ([🧩GENERAL]🧠Ideas.md)"
+            command: ideas_manager
+          - id: schedule_week_to_today
+            label: "➡️ Agendar Tarea Semanal a Día Activo"
+            command: schedule_week_to_today
+
+      - id: consolidation
+        label: "📦 Consolidación"
+        items:
+          - id: consolidate_month
+            label: "📅 Consolidar Mes Completo ([YYYY][MM].md)"
+            command: consolidate_month
+          - id: consolidate_year
+            label: "🗓️ Consolidar Año Completo ([YYYY].md)"
+            command: consolidate_year
+
+      - id: tools
+        label: "🛠️ Herramientas"
+        items:
+          - id: pomodoro_timer
+            label: "🍅 Temporizador Pomodoro Flotante"
+            command: pomodoro_timer
+          - id: work_calendar
+            label: "🏖️ Calendario Laboral (Festivos / Vacaciones)"
+            command: work_calendar
+          - id: toggle_all_sections
+            label: "↕️ Expandir / Colapsar Todas las Secciones"
+            command: toggle_all_sections
