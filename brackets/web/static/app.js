@@ -102,7 +102,13 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('#locationPopover') && !e.target.closest('.day-loc-btn')) {
     closeLocationPopover();
   }
-  if (!e.target.closest('.menu-group')) {
+  // No cerrar si el clic ocurre dentro del drawer, en el botón hamburguesa o en elementos de menú
+  if (
+    !e.target.closest('#hamburgerDrawer') &&
+    !e.target.closest('#btnHamburger') &&
+    !e.target.closest('.btn-hamburger') &&
+    !e.target.closest('.menu-group')
+  ) {
     closeAllTopMenuDropdowns();
   }
 });
@@ -124,6 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateSoundToggleButton();
   setupCollapsibleSections();
   setupSectionReordering();
+  renderHamburgerMenu([]);
   await loadVaults();
   await loadHub();
 });
@@ -625,13 +632,22 @@ function setupEventListeners() {
 
   // Menú Hamburguesa Drawer
   if (el.btnHamburger) {
-    el.btnHamburger.addEventListener('click', openHamburgerMenu);
+    el.btnHamburger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openHamburgerMenu();
+    });
   }
   if (el.btnCloseHamburger) {
-    el.btnCloseHamburger.addEventListener('click', closeHamburgerMenu);
+    el.btnCloseHamburger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeHamburgerMenu();
+    });
   }
   if (el.hamburgerBackdrop) {
-    el.hamburgerBackdrop.addEventListener('click', closeHamburgerMenu);
+    el.hamburgerBackdrop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeHamburgerMenu();
+    });
   }
 
   // Navegación rápida de semanas y botones del banner
