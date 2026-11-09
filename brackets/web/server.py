@@ -466,6 +466,21 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                     )
                     return self._send_json(201, res)
 
+                elif path == "/api/calendar/pattern":
+                    vault = body.get("vault")
+                    defaults = body.get("defaults")
+                    alt_day = body.get("alternating_day")
+                    even_week = body.get("even_week")
+                    odd_week = body.get("odd_week")
+                    res = svc.update_work_pattern(
+                        vault_identifier=vault,
+                        defaults=defaults,
+                        alternating_day=alt_day,
+                        even_week=even_week,
+                        odd_week=odd_week
+                    )
+                    return self._send_json(200, res)
+
                 elif path == "/api/consolidate/month":
                     vault = body.get("vault")
                     year = body.get("year")

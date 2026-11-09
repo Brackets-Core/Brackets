@@ -604,6 +604,141 @@
     return config;
   }
 
+  function serializeWorkCalendarYaml(cal) {
+    let out = 'version: 1\n';
+    out += 'locations:\n';
+    const locs = cal.locations || { home: '🏠', office: '🚗', remote: '💻', off: '🏖️' };
+    for (const [k, v] of Object.entries(locs)) {
+      out += `  ${k === 'off' ? "'off'" : k}: "${v}"\n`;
+    }
+    out += 'work_pattern:\n';
+    const wp = cal.work_pattern || {};
+    if (wp.alternating_day) out += `  alternating_day: ${wp.alternating_day}\n`;
+    if (wp.even_week) out += `  even_week: ${wp.even_week}\n`;
+    if (wp.odd_week) out += `  odd_week: ${wp.odd_week}\n`;
+    out += '  defaults:\n';
+    const defs = wp.defaults || {
+      monday: 'office',
+      tuesday: 'office',
+      wednesday: 'home',
+      thursday: 'home',
+      friday: 'alternating',
+      saturday: 'off',
+      sunday: 'off'
+    };
+    for (const [day, val] of Object.entries(defs)) {
+      out += `    ${day}: ${val}\n`;
+    }
+    const cObj = cal.calendar || cal;
+    out += 'calendar:\n';
+    out += '  holidays:\n';
+    for (const h of (cObj.holidays || [])) {
+      out += `  - date: '${h.date}'\n    name: "${(h.name || 'Festivo').replace(/"/g, '\\"')}"\n`;
+    }
+    out += '  vacations:\n';
+    for (const v of (cObj.vacations || [])) {
+      out += `  - start: '${v.start}'\n    end: '${v.end}'\n    name: "${(v.name || 'Vacaciones').replace(/"/g, '\\"')}"\n`;
+    }
+    out += '  closures:\n';
+    for (const c of (cObj.closures || [])) {
+      out += `  - date: '${c.date}'\n    name: "${(c.name || 'Cierre').replace(/"/g, '\\"')}"\n`;
+    }
+    out += '  intensive_workdays:\n';
+    for (const i of (cObj.intensive_workdays || [])) {
+      out += `  - date: '${i.date}'\n    name: "${(i.name || 'Jornada Intensiva').replace(/"/g, '\\"')}"\n`;
+    }
+    return out;
+  }
+
+  function parseRecurringTasksYaml(yamlText) {
+    if (!yamlText) return [];
+    const lines = yamlText.split(/\r?\n/);
+    const tasks = [];
+    let current = null;
+    let inDaysOfWeek = false;
+
+    for (let rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      if (trimmed.startsWith('- id:')) {
+        if (current) tasks.push(current);
+        current = {
+          id: trimmed.replace(/^- id:\s*/, '').trim().replace(/^['"]|['"]$/g, ''),
+          title: '',
+          recurrence_type: 'weekly_days',
+          days_of_week: [],
+          interval_weeks: 1,
+          base_week: 1,
+          day_of_week: 0,
+          project_id: null,
+          active: true,
+          task_type: 'task'
+        };
+        inDaysOfWeek = false;
+        continue;
+      }
+
+      if (!current) continue;
+
+      if (trimmed.startsWith('days_of_week:')) {
+        inDaysOfWeek = true;
+        const rest = trimmed.replace('days_of_week:', '').trim();
+        if (rest.startsWith('[') && rest.endsWith(']')) {
+          current.days_of_week = rest.slice(1, -1).split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n));
+          inDaysOfWeek = false;
+        }
+        continue;
+      }
+
+      if (inDaysOfWeek) {
+        if (trimmed.startsWith('- ') && !trimmed.includes(':')) {
+          const val = Number(trimmed.replace('- ', '').trim());
+          if (!isNaN(val)) current.days_of_week.push(val);
+          continue;
+        } else {
+          inDaysOfWeek = false;
+        }
+      }
+
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx > 0) {
+        const key = trimmed.slice(0, colonIdx).trim();
+        let val = trimmed.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (key === 'title') current.title = val;
+        else if (key === 'recurrence_type') current.recurrence_type = val;
+        else if (key === 'task_type') current.task_type = val;
+        else if (key === 'project_id') current.project_id = val === 'null' ? null : val;
+        else if (key === 'active') current.active = (val === 'true');
+        else if (key === 'interval_weeks') current.interval_weeks = Number(val) || 1;
+        else if (key === 'base_week') current.base_week = Number(val) || 1;
+        else if (key === 'day_of_week') current.day_of_week = Number(val) || 0;
+      }
+    }
+    if (current) tasks.push(current);
+    return tasks;
+  }
+
+  function serializeRecurringTasksYaml(tasks) {
+    let out = 'recurring_tasks:\n';
+    for (const t of tasks) {
+      out += `- id: ${t.id}\n`;
+      out += `  title: "${(t.title || '').replace(/"/g, '\\"')}"\n`;
+      out += `  recurrence_type: ${t.recurrence_type || 'weekly_days'}\n`;
+      out += '  days_of_week:\n';
+      for (const d of (t.days_of_week || [])) {
+        out += `  - ${d}\n`;
+      }
+      out += `  interval_weeks: ${t.interval_weeks || 1}\n`;
+      out += `  base_week: ${t.base_week || 1}\n`;
+      out += `  day_of_week: ${t.day_of_week || 0}\n`;
+      out += `  project_id: ${t.project_id ? `"${t.project_id}"` : 'null'}\n`;
+      out += `  active: ${t.active ? 'true' : 'false'}\n`;
+      out += `  task_type: ${t.task_type || 'task'}\n`;
+    }
+    return out;
+  }
+
   function resolveDayLocation(dateObj, weekNumber, calendar, vaultType) {
     if (vaultType === 'personal') {
       return { emoji: '🌱', note: null };
@@ -1097,6 +1232,119 @@
       return cal;
     },
 
+    async saveWorkCalendar(vault, calConfig) {
+      const yamlStr = serializeWorkCalendarYaml(calConfig);
+      await GitHubRestClient.putFile(vault, 'data/work_calendar.yaml', yamlStr, 'chore(calendar): update work_calendar.yaml');
+      this.calendarCache.set(vault.id, calConfig);
+    },
+
+    async getRecurringTasks(vault) {
+      try {
+        const fileData = await GitHubRestClient.getFile(vault, 'data/tables/recurring_tasks.yaml');
+        return parseRecurringTasksYaml(fileData.content);
+      } catch (err) {
+        if (err.status === 404) return [];
+        throw err;
+      }
+    },
+
+    async saveRecurringTasks(vault, tasks) {
+      const yamlStr = serializeRecurringTasksYaml(tasks);
+      await GitHubRestClient.putFile(vault, 'data/tables/recurring_tasks.yaml', yamlStr, 'chore(recurring): update recurring_tasks.yaml');
+    },
+
+    injectRecurringTaskIntoWeekState(weekState, r) {
+      if (!r.active) return 0;
+      let count = 0;
+      const isMatchWeek = (r.recurrence_type !== 'interval_weeks') ||
+        ((weekState.week_number - (Number(r.base_week) || 1)) % (Number(r.interval_weeks) || 1) === 0);
+
+      if (!isMatchWeek) return 0;
+
+      if (r.recurrence_type === 'week_tasks') {
+        const exists = weekState.week_tasks.some((t) => t.title.toLowerCase() === r.title.toLowerCase());
+        if (!exists) {
+          weekState.week_tasks.push(syncTaskFlags({
+            id: `TSK-GH-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+            title: r.title,
+            status: 'pending',
+            task_type: r.task_type || 'task',
+            project_id: r.project_id || null,
+            is_week_task: true,
+            day_number: null
+          }));
+          count++;
+        }
+      } else if (r.recurrence_type === 'weekly_days' || r.recurrence_type === 'interval_weeks') {
+        const daysToInject = r.recurrence_type === 'interval_weeks'
+          ? [Number(r.day_of_week) || 0]
+          : (Array.isArray(r.days_of_week) ? r.days_of_week : []);
+
+        for (const weekdayIdx of daysToInject) {
+          if (weekdayIdx >= 0 && weekdayIdx < weekState.days.length) {
+            const targetDay = weekState.days[weekdayIdx];
+            const exists = targetDay.tasks.some((t) => t.title.toLowerCase() === r.title.toLowerCase());
+            if (!exists) {
+              targetDay.tasks.push(syncTaskFlags({
+                id: `TSK-GH-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 100)}`,
+                title: r.title,
+                status: 'pending',
+                task_type: r.task_type || 'meeting',
+                project_id: r.project_id || null,
+                is_week_task: false,
+                day_number: targetDay.day_number
+              }));
+              count++;
+            }
+          }
+        }
+      }
+      return count;
+    },
+
+    async ensureScaffolding(vault) {
+      const defaultCalYaml = serializeWorkCalendarYaml(getDefaultWorkCalendar(vault.vault_type));
+      const defaultTaskTypesYaml = `task_types:
+  - key: meeting
+    label: Reunión
+    premoji: "🫱🏼‍🫲🏽"
+    text_prefixes: ["reunión:", "reunion:"]
+    emoji_aliases: ["🤝"]
+  - key: task
+    label: Tarea
+    premoji: "📋"
+  - key: bug
+    label: Bug / Incidencia
+    premoji: "🐛"
+    text_prefixes: ["bug:", "fix:"]
+  - key: call
+    label: Llamada
+    premoji: "📞"
+    text_prefixes: ["call:", "llamada:"]
+  - key: spike
+    label: Spike / Investigación
+    premoji: "🔬"
+    text_prefixes: ["spike:"]
+`;
+      const filesToCheck = [
+        { path: 'data/config.yaml', content: `vault_type: ${vault.vault_type || 'work'}\nname: "${vault.repo || 'MyVault'}"\nversion: 1\n` },
+        { path: 'data/work_calendar.yaml', content: defaultCalYaml },
+        { path: 'data/task_types.yaml', content: defaultTaskTypesYaml },
+        { path: 'data/tables/recurring_tasks.yaml', content: 'recurring_tasks: []\n' },
+        { path: 'data/tables/tasks.yaml', content: 'tasks: []\n' }
+      ];
+
+      for (const item of filesToCheck) {
+        try {
+          await GitHubRestClient.getFile(vault, item.path, { useCache: true });
+        } catch (err) {
+          if (err.status === 404) {
+            await GitHubRestClient.putFile(vault, item.path, item.content, `chore: initialize ${item.path}`);
+          }
+        }
+      }
+    },
+
     async listAvailableWeeks(vault) {
       const items = await GitHubRestClient.listContents(vault, '');
       const weeks = [];
@@ -1115,6 +1363,9 @@
 
     async loadOrCreateWeek(vault, year = null, weekNumber = null) {
       const weeks = await this.listAvailableWeeks(vault);
+      if (weeks.length === 0) {
+        await this.ensureScaffolding(vault);
+      }
       const nowIso = getIsoWeekInfo(new Date());
 
       let targetYear = year ? Number(year) : null;
@@ -1146,6 +1397,12 @@
         if (err.status === 404) {
           const calConfig = await this.getWorkCalendar(vault);
           parsedWeek = BitacoraMarkdownCodec.createEmptyWeekState(targetYear, targetWeek, vault, calConfig);
+          try {
+            const recList = await this.getRecurringTasks(vault);
+            for (const r of recList) {
+              if (r.active) this.injectRecurringTaskIntoWeekState(parsedWeek, r);
+            }
+          } catch (_) {}
           const initialMd = BitacoraMarkdownCodec.renderWeekMarkdown(parsedWeek);
           await GitHubRestClient.putFile(vault, targetFile, initialMd, `chore: create bitacora ${targetFile}`);
           const existsInList = weeks.some((w) => w.year === targetYear && w.week_number === targetWeek);
@@ -1599,6 +1856,13 @@
         const nextYear = weekState.week_number >= 52 ? weekState.year + 1 : weekState.year;
         const calConfig = await this.getWorkCalendar(vault);
         const nextState = BitacoraMarkdownCodec.createEmptyWeekState(nextYear, nextWeekNum, vault, calConfig);
+        let injectedRecCount = 0;
+        try {
+          const recList = await this.getRecurringTasks(vault);
+          for (const r of recList) {
+            if (r.active) injectedRecCount += this.injectRecurringTaskIntoWeekState(nextState, r);
+          }
+        } catch (_) {}
         nextState.topics = [...weekState.topics];
         const pendingTasks = [
           ...weekState.week_tasks.filter((t) => t.status === 'pending'),
@@ -1614,7 +1878,7 @@
           week_number: nextWeekNum,
           file: nextFile,
           rolled_over_tasks: pendingTasks.length,
-          injected_recurring: 0
+          injected_recurring: injectedRecCount
         };
       }
       if (pathname === '/api/weeks/extra-day' && method === 'POST') {
@@ -1693,6 +1957,140 @@
           v.progress_pct = v.total_tasks > 0 ? Math.round((v.done_tasks / v.total_tasks) * 100) : 0;
         });
         return { projects: Array.from(map.values()) };
+      }
+
+      // 14. Calendario Laboral: /api/calendar
+      if (pathname === '/api/calendar' && method === 'GET') {
+        const cal = await this.getWorkCalendar(vault);
+        const cObj = cal.calendar || cal;
+        return {
+          work_pattern: cal.work_pattern,
+          locations: cal.locations,
+          holidays: cObj.holidays || [],
+          vacations: cObj.vacations || [],
+          closures: cObj.closures || [],
+          intensive_workdays: cObj.intensive_workdays || [],
+          summary: 'Calendario laboral cargado desde GitHub'
+        };
+      }
+      if (pathname === '/api/calendar/holidays' && method === 'POST') {
+        const cal = await this.getWorkCalendar(vault);
+        if (!cal.calendar) cal.calendar = { holidays: [], vacations: [], closures: [], intensive_workdays: [] };
+        cal.calendar.holidays.push({ date: bodyObj.date, name: bodyObj.name || 'Festivo' });
+        await this.saveWorkCalendar(vault, cal);
+        return { success: true, holidays: cal.calendar.holidays };
+      }
+      const mDelHol = pathname.match(/^\/api\/calendar\/holidays\/(\d+)$/);
+      if (mDelHol && method === 'DELETE') {
+        const idx = Number(mDelHol[1]);
+        const cal = await this.getWorkCalendar(vault);
+        if (cal.calendar && cal.calendar.holidays && idx >= 0 && idx < cal.calendar.holidays.length) {
+          cal.calendar.holidays.splice(idx, 1);
+          await this.saveWorkCalendar(vault, cal);
+        }
+        return { success: true, holidays: (cal.calendar && cal.calendar.holidays) || [] };
+      }
+      if (pathname === '/api/calendar/vacations' && method === 'POST') {
+        const cal = await this.getWorkCalendar(vault);
+        if (!cal.calendar) cal.calendar = { holidays: [], vacations: [], closures: [], intensive_workdays: [] };
+        cal.calendar.vacations.push({ start: bodyObj.start, end: bodyObj.end, name: bodyObj.name || 'Vacaciones' });
+        await this.saveWorkCalendar(vault, cal);
+        return { success: true, vacations: cal.calendar.vacations };
+      }
+      const mDelVac = pathname.match(/^\/api\/calendar\/vacations\/(\d+)$/);
+      if (mDelVac && method === 'DELETE') {
+        const idx = Number(mDelVac[1]);
+        const cal = await this.getWorkCalendar(vault);
+        if (cal.calendar && cal.calendar.vacations && idx >= 0 && idx < cal.calendar.vacations.length) {
+          cal.calendar.vacations.splice(idx, 1);
+          await this.saveWorkCalendar(vault, cal);
+        }
+        return { success: true, vacations: (cal.calendar && cal.calendar.vacations) || [] };
+      }
+      if (pathname === '/api/calendar/pattern' && method === 'POST') {
+        const cal = await this.getWorkCalendar(vault);
+        if (bodyObj.defaults) {
+          cal.work_pattern.defaults = Object.assign(cal.work_pattern.defaults || {}, bodyObj.defaults);
+        }
+        if (bodyObj.alternating_day) cal.work_pattern.alternating_day = bodyObj.alternating_day;
+        if (bodyObj.even_week) cal.work_pattern.even_week = bodyObj.even_week;
+        if (bodyObj.odd_week) cal.work_pattern.odd_week = bodyObj.odd_week;
+        await this.saveWorkCalendar(vault, cal);
+        return { success: true, work_pattern: cal.work_pattern };
+      }
+      if (pathname === '/api/calendar/apply' && method === 'POST') {
+        const cal = await this.getWorkCalendar(vault);
+        for (let i = 0; i < weekState.days.length; i++) {
+          const d = weekState.days[i];
+          const dt = getDateFromIsoWeek(weekState.year, weekState.week_number, i + 1);
+          const { emoji, note } = resolveDayLocation(dt, weekState.week_number, cal, vault.vault_type);
+          d.location_emoji = emoji;
+          d.location_note = note;
+        }
+        await this.saveWeekState(vault, weekState, `chore(calendar): apply calendar to week ${weekState.week_number}`);
+        return { success: true, changed: true, year: weekState.year, week_number: weekState.week_number };
+      }
+
+      // 15. Tareas Recurrentes: /api/recurring
+      if (pathname === '/api/recurring' && method === 'GET') {
+        const recList = await this.getRecurringTasks(vault);
+        return { recurring_tasks: recList };
+      }
+      if (pathname === '/api/recurring' && method === 'POST') {
+        const recList = await this.getRecurringTasks(vault);
+        const { project_id, clean_title } = BitacoraMarkdownCodec.parseProjectTag(bodyObj.title || '');
+        const newRec = {
+          id: `REC-${String(recList.length + 1).padStart(4, '0')}`,
+          title: clean_title,
+          recurrence_type: bodyObj.recurrence_type || 'weekly_days',
+          days_of_week: Array.isArray(bodyObj.days_of_week) ? bodyObj.days_of_week : [],
+          interval_weeks: Number(bodyObj.interval_weeks) || 1,
+          base_week: Number(bodyObj.base_week) || weekState.week_number || 1,
+          day_of_week: Number(bodyObj.day_of_week) || 0,
+          project_id: bodyObj.project_id || project_id || null,
+          active: true,
+          task_type: bodyObj.task_type || (clean_title.toLowerCase().includes('reunión') || clean_title.toLowerCase().includes('sync') ? 'meeting' : 'task')
+        };
+        recList.push(newRec);
+        await this.saveRecurringTasks(vault, recList);
+        this.injectRecurringTaskIntoWeekState(weekState, newRec);
+        await this.saveWeekState(vault, weekState, `feat(rec): add recurring task ${newRec.id}`);
+        return { success: true, recurring_task: newRec };
+      }
+      const mRecToggle = pathname.match(/^\/api\/recurring\/([^/]+)\/toggle$/);
+      if (mRecToggle && method === 'PATCH') {
+        const recId = decodeURIComponent(mRecToggle[1]);
+        const recList = await this.getRecurringTasks(vault);
+        const target = recList.find((r) => r.id === recId);
+        if (target) {
+          target.active = !target.active;
+          await this.saveRecurringTasks(vault, recList);
+          return { success: true, recurring_task: target };
+        }
+        throw new Error(`Tarea recurrente ${recId} no encontrada.`);
+      }
+      const mRecDel = pathname.match(/^\/api\/recurring\/([^/]+)$/);
+      if (mRecDel && method === 'DELETE') {
+        const recId = decodeURIComponent(mRecDel[1]);
+        const recList = await this.getRecurringTasks(vault);
+        const idx = recList.findIndex((r) => r.id === recId);
+        if (idx >= 0) {
+          recList.splice(idx, 1);
+          await this.saveRecurringTasks(vault, recList);
+          return { success: true };
+        }
+        throw new Error(`Tarea recurrente ${recId} no encontrada.`);
+      }
+      if (pathname === '/api/recurring/apply' && method === 'POST') {
+        const recList = await this.getRecurringTasks(vault);
+        let injected = 0;
+        for (const r of recList) {
+          if (r.active) {
+            injected += this.injectRecurringTaskIntoWeekState(weekState, r);
+          }
+        }
+        await this.saveWeekState(vault, weekState, `chore(rec): apply recurring tasks to week ${weekState.week_number}`);
+        return { success: true, injected: injected, injected_tasks: injected };
       }
 
       return { success: true };

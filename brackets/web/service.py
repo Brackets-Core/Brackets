@@ -2045,6 +2045,30 @@ class BracketsWebService:
         settings.delete_vacation(int(index))
         return {"success": True, "vacations": settings.list_vacations()}
 
+    def update_work_pattern(
+        self,
+        vault_identifier: Optional[str] = None,
+        defaults: Optional[Dict[str, str]] = None,
+        alternating_day: Optional[str] = None,
+        even_week: Optional[str] = None,
+        odd_week: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Actualiza el patrón de trabajo semanal en work_calendar.yaml."""
+        vault_path = self.resolve_vault_path(vault_identifier)
+        from brackets.managers.settings_manager import SettingsManager
+        settings = SettingsManager(vault_path)
+        if defaults and isinstance(defaults, dict):
+            for d_key, loc in defaults.items():
+                if d_key in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
+                    settings.set_day_location(d_key, loc)
+        if alternating_day and even_week and odd_week:
+            settings.set_alternating(alternating_day, even_week, odd_week)
+        return {
+            "success": True,
+            "work_pattern": settings.data.get("work_pattern", {}),
+            "summary": settings.describe_work_pattern()
+        }
+
     def consolidate_month(
         self,
         vault_identifier: Optional[str] = None,

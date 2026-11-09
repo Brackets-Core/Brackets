@@ -349,6 +349,19 @@ class TestWebServiceAndApi(unittest.TestCase):
         hub2 = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
         self.assertFalse(any(n["id"] == note_id for n in hub2.get("notes", [])))
 
+    def test_update_work_pattern_and_apply(self):
+        """Verifica la actualización del patrón de trabajo semanal y su aplicación."""
+        res = self.service.update_work_pattern(
+            vault_identifier=self.vault_dir,
+            defaults={"monday": "office", "tuesday": "home", "wednesday": "home", "thursday": "office", "friday": "home"}
+        )
+        self.assertTrue(res["success"])
+        self.assertEqual(res["work_pattern"]["defaults"]["tuesday"], "home")
+
+        # Reaplicar a la semana
+        app_res = self.service.apply_calendar(vault_identifier=self.vault_dir, year=2026, week_number=40)
+        self.assertTrue(app_res["success"])
+
 class TestHttpServerIntegration(unittest.TestCase):
     """Pruebas de integración HTTP sobre un servidor local efímero."""
 

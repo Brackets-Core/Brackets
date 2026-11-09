@@ -3347,12 +3347,50 @@ function openConsolidateYearModal() {
 }
 
 async function openWorkCalendarModal() {
-  openModal('🏖️ Calendario Laboral (Festivos y Vacaciones)', `<div>Cargando calendario...</div>`);
+  openModal('🏖️ Calendario Laboral y Patrón de Trabajo', `<div>Cargando calendario...</div>`);
   try {
     const res = await fetch(`/api/calendar?vault=${encodeURIComponent(state.currentVault || '')}`);
     const data = await res.json();
     const holidays = data.holidays || [];
     const vacations = data.vacations || [];
+    const wp = data.work_pattern || {};
+    const wpDefaults = Object.assign({
+      monday: 'office',
+      tuesday: 'office',
+      wednesday: 'home',
+      thursday: 'home',
+      friday: 'alternating'
+    }, wp.defaults || {});
+
+    const dayMeta = [
+      { key: 'monday', label: 'Lunes', short: 'L' },
+      { key: 'tuesday', label: 'Martes', short: 'M' },
+      { key: 'wednesday', label: 'Miércoles', short: 'X' },
+      { key: 'thursday', label: 'Jueves', short: 'J' },
+      { key: 'friday', label: 'Viernes', short: 'V' }
+    ];
+
+    const locInfo = {
+      office: { emoji: '🚗', name: 'Oficina' },
+      home: { emoji: '🏠', name: 'Casa' },
+      remote: { emoji: '💻', name: 'Remoto' },
+      alternating: { emoji: '🔄', name: 'Alterno' }
+    };
+    const cycleLocs = ['office', 'home', 'remote', 'alternating'];
+
+    const renderPatternButtonsHtml = () => {
+      return dayMeta.map((dm) => {
+        const curLoc = wpDefaults[dm.key] || 'office';
+        const info = locInfo[curLoc] || locInfo.office;
+        return `
+          <button type="button" class="work-pattern-day-btn" data-day="${dm.key}" title="Toca para alternar ubicación de ${dm.label}">
+            <span class="work-pattern-day-letter">${dm.short}</span>
+            <span class="work-pattern-day-emoji">${info.emoji}</span>
+            <span class="work-pattern-day-loc">${info.name}</span>
+          </button>
+        `;
+      }).join('');
+    };
 
     const holHtml = holidays.map((h, idx) => `
       <div class="modal-list-item">
@@ -3369,27 +3407,80 @@ async function openWorkCalendarModal() {
     `).join('');
 
     el.modalBody.innerHTML = `
-      <div class="modal-section-title">Añadir Día Festivo</div>
+      <div class="modal-section-title">💼 Patrón Semanal Habitual (Teletrabajo / Presencial)</div>
+      <p style="font-size:0.75rem; color:var(--text-muted); margin:0 0 8px 0;">
+        Toca cada día para alternar tu rutina habitual (Oficina 🚗, Casa 🏠, Remoto 💻 o Alterno 🔄):
+      </p>
+      <div class="work-pattern-row" id="modalWorkPatternRow">
+        ${renderPatternButtonsHtml()}
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; gap:8px;">
+        <button id="btnSaveWorkPattern" class="btn-edit-save" type="button" style="font-size:0.8rem;">💾 Guardar Patrón</button>
+        <button id="btnModalApplyCal" class="btn-edit-cancel" type="button" style="font-size:0.8rem;">📆 Reaplicar a Semana Actual</button>
+      </div>
+
+      <div class="modal-section-title" style="margin-top:10px;">Añadir Día Festivo</div>
       <div class="modal-form-row">
         <input id="calHolDate" class="edit-input" style="flex:0 0 155px;" type="date">
         <input id="calHolName" class="edit-input" style="flex:1;" type="text" placeholder="Nombre del festivo">
         <button id="btnAddHol" class="btn-edit-save" type="button">➕ Festivo</button>
       </div>
-      <div class="modal-list" style="max-height:140px;">${holHtml || '<div class="empty-state" style="padding:10px;">Sin festivos registrados.</div>'}</div>
+      <div class="modal-list" style="max-height:120px;">${holHtml || '<div class="empty-state" style="padding:10px;">Sin festivos registrados.</div>'}</div>
 
-      <div class="modal-section-title" style="margin-top:6px;">Añadir Periodo de Vacaciones</div>
+      <div class="modal-section-title" style="margin-top:10px;">Añadir Periodo de Vacaciones</div>
       <div class="modal-form-row">
         <input id="calVacStart" class="edit-input" style="flex:1;" type="date" title="Inicio">
         <input id="calVacEnd" class="edit-input" style="flex:1;" type="date" title="Fin">
         <input id="calVacName" class="edit-input" style="flex:1;" type="text" placeholder="Motivo / Nombre">
         <button id="btnAddVac" class="btn-edit-save" type="button">➕ Vacaciones</button>
       </div>
-      <div class="modal-list" style="max-height:140px;">${vacHtml || '<div class="empty-state" style="padding:10px;">Sin vacaciones registradas.</div>'}</div>
-
-      <div style="display:flex;justify-content:flex-end;margin-top:6px;">
-        <button id="btnModalApplyCal" class="btn-edit-cancel" type="button">📆 Reaplicar Calendario a Semana Actual</button>
-      </div>
+      <div class="modal-list" style="max-height:120px;">${vacHtml || '<div class="empty-state" style="padding:10px;">Sin vacaciones registradas.</div>'}</div>
     `;
+
+    // Interacción del patrón semanal
+    const patternRow = document.getElementById('modalWorkPatternRow');
+    if (patternRow) {
+      patternRow.querySelectorAll('.work-pattern-day-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const dayKey = btn.dataset.day;
+          const curLoc = wpDefaults[dayKey] || 'office';
+          const curIdx = cycleLocs.indexOf(curLoc);
+          const nextLoc = cycleLocs[(curIdx + 1) % cycleLocs.length];
+          wpDefaults[dayKey] = nextLoc;
+          const nextInfo = locInfo[nextLoc] || locInfo.office;
+          btn.querySelector('.work-pattern-day-emoji').textContent = nextInfo.emoji;
+          btn.querySelector('.work-pattern-day-loc').textContent = nextInfo.name;
+        });
+      });
+    }
+
+    const btnSavePattern = document.getElementById('btnSaveWorkPattern');
+    if (btnSavePattern) {
+      btnSavePattern.addEventListener('click', async () => {
+        btnSavePattern.disabled = true;
+        try {
+          const r = await fetch('/api/calendar/pattern', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              vault: state.currentVault,
+              defaults: wpDefaults,
+              alternating_day: wp.alternating_day || 'friday',
+              even_week: wp.even_week || 'home',
+              odd_week: wp.odd_week || 'office'
+            })
+          });
+          if (r.ok) {
+            showToast('Patrón de trabajo semanal guardado', 'success');
+            await runApplyCalendar();
+          }
+        } catch (err) {
+          showToast('Error guardando patrón', 'error');
+        } finally {
+          btnSavePattern.disabled = false;
+        }
+      });
+    }
 
     document.getElementById('btnAddHol').addEventListener('click', async () => {
       const d = document.getElementById('calHolDate').value;
