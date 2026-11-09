@@ -1515,8 +1515,28 @@
       // 9. Definitions CRUD: /api/definitions
       if (pathname === '/api/definitions' && method === 'POST') {
         let code = (bodyObj.id || bodyObj.code || '').trim();
-        if (!code.startsWith('[')) code = `[🎫${code.replace(/^🎫/, '')}]`;
-        const url = (bodyObj.url || `https://jira.example.com/browse/${code.replace(/[\[\]🎫]/g, '')}`).trim();
+        let url = (bodyObj.url || '').trim();
+
+        // Auto-extract Jira ticket si code está vacío o si code es una URL
+        if (!code && url) {
+          const m = url.match(/(?:browse\/|issues?\/|selectedIssue=|key=|^|[\/?#&])([A-Za-z][A-Za-z0-9_]*-\d+)(?:[/&#? ]|$)/i);
+          if (m) code = m[1].toUpperCase();
+        } else if (code.startsWith('http://') || code.startsWith('https://')) {
+          const m = code.match(/(?:browse\/|issues?\/|selectedIssue=|key=|^|[\/?#&])([A-Za-z][A-Za-z0-9_]*-\d+)(?:[/&#? ]|$)/i);
+          if (m) {
+            if (!url) url = code;
+            code = m[1].toUpperCase();
+          }
+        }
+
+        const cleanTicket = code.replace(/[\[\]🎫]/g, '').trim();
+        if (/^[A-Za-z][A-Za-z0-9_]*-\d+$/i.test(cleanTicket)) {
+          code = `[🎫${cleanTicket.toUpperCase()}]`;
+          if (!url) url = `https://jira.example.com/browse/${cleanTicket.toUpperCase()}`;
+        } else if (!code.startsWith('[')) {
+          code = `[${code}]`;
+        }
+
         const existingIdx = weekState.definitions.findIndex((d) => d.id === code);
         if (existingIdx >= 0) weekState.definitions[existingIdx].url = url;
         else weekState.definitions.push({ id: code, url });
