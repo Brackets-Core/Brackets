@@ -495,6 +495,176 @@
     return task;
   }
 
+
+  // ===========================================================================
+  // 4b. Soporte para work_calendar.yaml y Resolución de Ubicación Diaria
+  // ===========================================================================
+  function getDefaultWorkCalendar(vaultType) {
+    return {
+      locations: { home: '🏠', office: '🚗', remote: '💻', off: '🏖️' },
+      work_pattern: {
+        alternating_day: 'friday',
+        even_week: 'office',
+        odd_week: 'home',
+        defaults: {
+          monday: 'office',
+          tuesday: 'office',
+          wednesday: 'home',
+          thursday: 'home',
+          friday: 'alternating',
+          saturday: 'off',
+          sunday: 'off'
+        }
+      },
+      calendar: {
+        holidays: [],
+        closures: [],
+        intensive_workdays: [],
+        vacations: []
+      }
+    };
+  }
+
+  function parseWorkCalendarYaml(yamlText) {
+    if (!yamlText) return null;
+    const config = getDefaultWorkCalendar('work');
+    const lines = yamlText.split(/\r?\n/);
+    let section = null;
+    let subSection = null;
+    let currentItem = null;
+
+    for (let rawLine of lines) {
+      if (!rawLine.trim() || rawLine.trim().startsWith('#')) continue;
+      const indent = rawLine.search(/\S/);
+      const line = rawLine.trim();
+
+      if (indent === 0 && line.includes(':')) {
+        section = line.split(':')[0].trim().replace(/^['"]|['"]$/g, '');
+        subSection = null;
+        currentItem = null;
+        continue;
+      }
+
+      if (section === 'locations' && indent >= 2 && line.includes(':')) {
+        const idx = line.indexOf(':');
+        const k = line.slice(0, idx).trim().replace(/^['"]|['"]$/g, '');
+        const v = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (k && v) config.locations[k] = v;
+        continue;
+      }
+
+      if (section === 'work_pattern') {
+        if (indent === 2 && line.startsWith('defaults:')) {
+          subSection = 'defaults';
+          continue;
+        }
+        if (indent === 2 && line.includes(':')) {
+          const idx = line.indexOf(':');
+          const k = line.slice(0, idx).trim().replace(/^['"]|['"]$/g, '');
+          const v = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+          config.work_pattern[k] = v;
+          continue;
+        }
+        if (subSection === 'defaults' && indent >= 4 && line.includes(':')) {
+          const idx = line.indexOf(':');
+          const k = line.slice(0, idx).trim().replace(/^['"]|['"]$/g, '');
+          const v = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+          config.work_pattern.defaults[k] = v;
+          continue;
+        }
+      }
+
+      if (section === 'calendar') {
+        if (indent === 2 && !line.startsWith('- ') && line.includes(':')) {
+          subSection = line.split(':')[0].trim().replace(/^['"]|['"]$/g, '');
+          currentItem = null;
+          if (!config.calendar[subSection]) config.calendar[subSection] = [];
+          continue;
+        }
+        if (subSection) {
+          if (line.startsWith('- ')) {
+            currentItem = {};
+            config.calendar[subSection].push(currentItem);
+            const rest = line.slice(2).trim();
+            if (rest.includes(':')) {
+              const idx = rest.indexOf(':');
+              const k = rest.slice(0, idx).trim().replace(/^['"]|['"]$/g, '');
+              const v = rest.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+              currentItem[k] = v;
+            }
+          } else if (currentItem && line.includes(':')) {
+            const idx = line.indexOf(':');
+            const k = line.slice(0, idx).trim().replace(/^['"]|['"]$/g, '');
+            const v = line.slice(idx + 1).trim().replace(/^['"]|['"]$/g, '');
+            currentItem[k] = v;
+          }
+        }
+      }
+    }
+    return config;
+  }
+
+  function resolveDayLocation(dateObj, weekNumber, calendar, vaultType) {
+    if (vaultType === 'personal') {
+      return { emoji: '🌱', note: null };
+    }
+    const cal = calendar || getDefaultWorkCalendar('work');
+    const locations = cal.locations || { home: '🏠', office: '🚗', remote: '💻', off: '🏖️' };
+    const offEmoji = locations['off'] || locations.off || '🏖️';
+
+    // Formatear YYYY-MM-DD
+    const y = dateObj.getUTCFullYear();
+    const m = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getUTCDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
+    // 1. Festivos
+    const holidays = (cal.calendar && cal.calendar.holidays) || [];
+    const holiday = holidays.find((h) => h.date === dateStr);
+    if (holiday) return { emoji: offEmoji, note: holiday.name };
+
+    // 2. Cierres de sede central
+    const closures = (cal.calendar && cal.calendar.closures) || [];
+    const closure = closures.find((c) => c.date === dateStr);
+    if (closure) return { emoji: offEmoji, note: closure.name };
+
+    // 3. Vacaciones
+    const vacations = (cal.calendar && cal.calendar.vacations) || [];
+    const vacation = vacations.find((v) => v.start <= dateStr && dateStr <= v.end);
+    if (vacation) return { emoji: offEmoji, note: vacation.name };
+
+    // 4. Patrón laboral habitual
+    const jsDay = dateObj.getUTCDay();
+    const isoIdx = jsDay === 0 ? 6 : jsDay - 1; // 0=Lunes ... 6=Domingo
+    const dayKey = WEEKDAY_KEYS[isoIdx] || 'monday';
+
+    const wp = cal.work_pattern || {};
+    const defaults = wp.defaults || {
+      monday: 'office',
+      tuesday: 'office',
+      wednesday: 'home',
+      thursday: 'home',
+      friday: 'alternating',
+      saturday: 'off',
+      sunday: 'off'
+    };
+
+    let locKey = defaults[dayKey] || 'office';
+    if (locKey === 'alternating' && dayKey === (wp.alternating_day || 'friday')) {
+      const isEven = (weekNumber % 2 === 0);
+      locKey = isEven ? (wp.even_week || 'office') : (wp.odd_week || 'home');
+    }
+
+    const emoji = locations[locKey] || (locKey === 'home' ? '🏠' : '🚗');
+
+    // 5. Jornada Intensiva (agrega nota)
+    const intensives = (cal.calendar && cal.calendar.intensive_workdays) || [];
+    const intensive = intensives.find((i) => i.date === dateStr);
+    const note = intensive ? intensive.name : null;
+
+    return { emoji, note };
+  }
+
   // ===========================================================================
   // 5. Codec Markdown + Frontmatter YAML de Bitácoras (Compatible 100% con Motor)
   // ===========================================================================
@@ -870,18 +1040,19 @@
       return (stateObj.frontmatter || '') + body;
     },
 
-    createEmptyWeekState(year, weekNumber, vault) {
+    createEmptyWeekState(year, weekNumber, vault, calendarConfig) {
       const daysCount = Number(vault.days_per_week) || (vault.vault_type === 'personal' ? 7 : 5);
       const firstDay = getDateFromIsoWeek(year, weekNumber, 1);
       const days = [];
       for (let i = 0; i < daysCount; i++) {
         const dt = getDateFromIsoWeek(year, weekNumber, i + 1);
+        const { emoji, note } = resolveDayLocation(dt, weekNumber, calendarConfig, vault.vault_type);
         days.push({
           day_number: dt.getUTCDate(),
           weekday_letter: WEEKDAY_LETTERS[i + 1] || 'L',
           weekday_name: WEEKDAY_NAMES[i + 1] || 'Día',
-          location_emoji: '🏠',
-          location_note: null,
+          location_emoji: emoji || (vault.vault_type === 'personal' ? '🌱' : '🏠'),
+          location_note: note || null,
           task_count: 0,
           tasks: []
         });
@@ -906,6 +1077,25 @@
   // ===========================================================================
   const GitHubVaultEngine = {
     activeWeekCache: new Map(),
+    calendarCache: new Map(),
+
+    async getWorkCalendar(vault) {
+      if (this.calendarCache.has(vault.id)) {
+        return this.calendarCache.get(vault.id);
+      }
+      let cal = null;
+      try {
+        const fileData = await GitHubRestClient.getFile(vault, 'data/work_calendar.yaml');
+        if (fileData && fileData.content) {
+          cal = parseWorkCalendarYaml(fileData.content);
+        }
+      } catch (_) {}
+      if (!cal) {
+        cal = getDefaultWorkCalendar(vault.vault_type);
+      }
+      this.calendarCache.set(vault.id, cal);
+      return cal;
+    },
 
     async listAvailableWeeks(vault) {
       const items = await GitHubRestClient.listContents(vault, '');
@@ -954,7 +1144,8 @@
         parsedWeek = BitacoraMarkdownCodec.parseWeekMarkdown(fileData.content, targetYear, targetWeek, vault);
       } catch (err) {
         if (err.status === 404) {
-          parsedWeek = BitacoraMarkdownCodec.createEmptyWeekState(targetYear, targetWeek, vault);
+          const calConfig = await this.getWorkCalendar(vault);
+          parsedWeek = BitacoraMarkdownCodec.createEmptyWeekState(targetYear, targetWeek, vault, calConfig);
           const initialMd = BitacoraMarkdownCodec.renderWeekMarkdown(parsedWeek);
           await GitHubRestClient.putFile(vault, targetFile, initialMd, `chore: create bitacora ${targetFile}`);
           const existsInList = weeks.some((w) => w.year === targetYear && w.week_number === targetWeek);
@@ -1349,7 +1540,8 @@
       if (pathname === '/api/weeks/next' && method === 'POST') {
         const nextWeekNum = weekState.week_number >= 52 ? 1 : weekState.week_number + 1;
         const nextYear = weekState.week_number >= 52 ? weekState.year + 1 : weekState.year;
-        const nextState = BitacoraMarkdownCodec.createEmptyWeekState(nextYear, nextWeekNum, vault);
+        const calConfig = await this.getWorkCalendar(vault);
+        const nextState = BitacoraMarkdownCodec.createEmptyWeekState(nextYear, nextWeekNum, vault, calConfig);
         nextState.topics = [...weekState.topics];
         const pendingTasks = [
           ...weekState.week_tasks.filter((t) => t.status === 'pending'),
