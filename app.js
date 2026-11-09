@@ -1407,6 +1407,10 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
         descHtml = `<div class="task-desc-box">${lines.map((l) => `<div class="task-desc-line">💬 ${escapeHtml(l)}</div>`).join('')}</div>`;
       }
 
+      const moveTodayBtn = (reorderType === 'week_tasks')
+        ? `<button class="btn-item-action btn-move-today" type="button" title="Trasladar tarea a hoy"><span class="btn-move-today-icon">📅</span><span class="btn-move-today-label">Hoy</span></button>`
+        : '';
+
       card.innerHTML = `
         <div class="task-main-row">
           <span class="drag-handle-item" draggable="true" title="Arrastrar para mover">⋮⋮</span>
@@ -1416,6 +1420,7 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
             <span class="task-title">${escapeHtml(task.title)}</span>
             ${projSpan}
           </div>
+          ${moveTodayBtn}
           <div class="item-reorder-btns">
             <button class="btn-item-nav btn-item-up" type="button" title="Subir">▲</button>
             <button class="btn-item-nav btn-item-down" type="button" title="Bajar">▼</button>
@@ -1426,10 +1431,40 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
 
       bindItemNavButtons(card, container, reorderType, dayNumber);
 
+      const btnMoveToday = card.querySelector('.btn-move-today');
+      if (btnMoveToday) {
+        btnMoveToday.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const activeDay = (state.hubData && state.hubData.active_day) ? state.hubData.active_day.day_number : (state.activeDayNumber || 'today');
+          btnMoveToday.disabled = true;
+          try {
+            const res = await fetch(`/api/tasks/${task.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                vault: state.currentVault,
+                target: `day:${activeDay}`,
+                year: state.activeYear,
+                week: state.activeWeekNumber
+              })
+            });
+            if (res.ok) {
+              showToast(`Tarea trasladada a hoy (Día ${activeDay})`, 'success');
+              await loadHub();
+            }
+          } catch (err) {
+            console.error('Error al trasladar tarea a hoy:', err);
+          } finally {
+            btnMoveToday.disabled = false;
+          }
+        });
+      }
+
       const chk = card.querySelector('.task-checkbox');
       chk.addEventListener('change', async (e) => {
         e.stopPropagation();
-        if (chk.checked) {
+        const willBeDone = chk.checked;
+        if (willBeDone) {
           checkAndPlayTaskCompletion(task.id, reorderType);
         }
         try {
@@ -1442,6 +1477,9 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
               week: state.activeWeekNumber
             })
           });
+          if (reorderType === 'week_tasks' && willBeDone) {
+            showToast('Tarea completada y trasladada a hoy', 'success');
+          }
           await loadHub();
         } catch (err) {
           console.error('Error al cambiar estado de tarea:', err);
@@ -1449,7 +1487,7 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
       });
 
       card.onclick = (e) => {
-        if (e.target.closest('.task-checkbox') || e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item') || e.target.closest('.item-reorder-btns')) return;
+        if (e.target.closest('.task-checkbox') || e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item') || e.target.closest('.item-reorder-btns') || e.target.closest('.btn-move-today')) return;
         renderEditView();
       };
     }

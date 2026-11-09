@@ -2629,3 +2629,41 @@ body {
     font-size: 0.7rem;
   }
 }
+
+.btn-move-today {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-move-today:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.btn-move-today-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+@media (max-width: 480px) {
+  .btn-move-today-label {
+    display: none;
+  }
+  .btn-move-today {
+    padding: 3px 5px;
+  }
+}

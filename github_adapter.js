@@ -1330,6 +1330,24 @@
         if (!found) throw new Error(`Tarea ${taskId} no encontrada.`);
         found.task.status = found.task.status === 'done' ? 'pending' : 'done';
         syncTaskFlags(found.task);
+
+        // Si era una tarea de la semana (sin día fijo) y se marca como resuelta, trasladarla automáticamente a hoy
+        if (found.day === null && found.task.status === 'done') {
+          found.list.splice(found.index, 1);
+          found.task.is_week_task = false;
+          const todayDate = new Date().getUTCDate();
+          let targetDay = weekState.days.find((d) => d.day_number === todayDate);
+          if (!targetDay && weekState.days.length > 0) {
+            targetDay = weekState.days[0];
+          }
+          if (targetDay) {
+            found.task.day_number = targetDay.day_number;
+            targetDay.tasks.push(found.task);
+          } else {
+            weekState.week_tasks.push(found.task);
+          }
+        }
+
         await this.saveWeekState(vault, weekState, `chore(task): toggle "${found.task.title}" -> ${found.task.status}`);
         return { success: true, new_status: found.task.status, task: found.task };
       }
@@ -1364,14 +1382,33 @@
           }
           if (bodyObj.description !== undefined) found.task.description = (bodyObj.description || '').trim() || null;
 
-          if (bodyObj.day_number !== undefined) {
+          const target = bodyObj.target;
+          if (target !== undefined || bodyObj.day_number !== undefined) {
             found.list.splice(found.index, 1);
-            if (bodyObj.day_number === null || bodyObj.day_number === 'week') {
+            if (target === 'week' || bodyObj.day_number === 'week' || bodyObj.day_number === null) {
+              found.task.is_week_task = true;
+              found.task.day_number = null;
               weekState.week_tasks.push(found.task);
+            } else if (target === 'today') {
+              found.task.is_week_task = false;
+              const todayDate = new Date().getUTCDate();
+              let destDay = weekState.days.find((d) => d.day_number === todayDate) || weekState.days[0];
+              if (destDay) {
+                found.task.day_number = destDay.day_number;
+                destDay.tasks.push(found.task);
+              } else {
+                weekState.week_tasks.push(found.task);
+              }
             } else {
-              const destDay = weekState.days.find((d) => d.day_number === Number(bodyObj.day_number));
-              if (destDay) destDay.tasks.push(found.task);
-              else weekState.week_tasks.push(found.task);
+              const dNum = target && String(target).startsWith('day:') ? Number(target.replace('day:', '')) : Number(bodyObj.day_number);
+              const destDay = weekState.days.find((d) => d.day_number === dNum);
+              if (destDay) {
+                found.task.is_week_task = false;
+                found.task.day_number = dNum;
+                destDay.tasks.push(found.task);
+              } else {
+                weekState.week_tasks.push(found.task);
+              }
             }
           }
 
