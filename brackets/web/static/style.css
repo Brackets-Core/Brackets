@@ -2667,3 +2667,84 @@ body {
     padding: 3px 5px;
   }
 }
+
+/* ==========================================================================
+   Autocomplete Popover para Definiciones y Enlaces con [
+   ========================================================================== */
+.def-autocomplete-popover {
+  position: fixed;
+  z-index: 10000;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), var(--shadow-md);
+  max-height: 250px;
+  overflow-y: auto;
+  min-width: 260px;
+  max-width: 380px;
+  display: none;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  backdrop-filter: blur(8px);
+}
+
+.def-autocomplete-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.def-autocomplete-item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.def-autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.def-autocomplete-item.active,
+.def-autocomplete-item:hover {
+  background: var(--accent-soft);
+}
+
+.def-autocomplete-code {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+}
+
+.def-autocomplete-code .def-item-title {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-family: var(--font-sans);
+  margin-left: 4px;
+}
+
+.def-autocomplete-url {
+  font-size: 0.73rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+}

@@ -252,9 +252,23 @@ class TestWebServiceAndApi(unittest.TestCase):
         self.assertEqual(defi["id"], "[🎫SYSC-73125]")
         self.assertTrue("SYSC-73125" in defi["url"])
 
-        # Hub data incluye la definición
+        # Auto-extracción desde URL con código vacío
+        res_url = self.service.create_definition(
+            vault_identifier=self.vault_dir,
+            code_or_id="",
+            url="https://mangospain.atlassian.net/browse/ATLM-14036",
+            year=2026,
+            week_number=40
+        )
+        self.assertTrue(res_url["success"])
+        defi_url = res_url["definition"]
+        self.assertEqual(defi_url["id"], "[🎫ATLM-14036]")
+        self.assertEqual(defi_url["url"], "https://mangospain.atlassian.net/browse/ATLM-14036")
+
+        # Hub data incluye las definiciones
         hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
         self.assertTrue(any(d["id"] == "[🎫SYSC-73125]" for d in hub.get("definitions", [])))
+        self.assertTrue(any(d["id"] == "[🎫ATLM-14036]" for d in hub.get("definitions", [])))
 
     def test_create_topic_and_reflection(self):
         """Verifica la creación de topics y reflejo en el Hub."""

@@ -771,13 +771,27 @@ class BracketsWebService:
         self._sync_week_from_markdown_if_exists(vault_path, week, mgr)
 
         clean_code = code_or_id.strip()
+        # Si clean_code está vacío pero url tiene un ticket Jira:
+        if not clean_code and url:
+            m_ticket = re.search(r'(?:browse\/|issues?\/|selectedIssue=|key=|^|[\/?#&])([A-Za-z][A-Za-z0-9_]*-\d+)(?:[/&#? ]|$)', url)
+            if m_ticket:
+                clean_code = m_ticket.group(1).upper()
+
+        # Si clean_code es una URL completa que contiene ticket Jira:
+        if re.search(r'https?://', clean_code):
+            m_url_ticket = re.search(r'(?:browse\/|issues?\/|selectedIssue=|key=|^|[\/?#&])([A-Za-z][A-Za-z0-9_]*-\d+)(?:[/&#? ]|$)', clean_code)
+            if m_url_ticket:
+                if not url:
+                    url = clean_code
+                clean_code = m_url_ticket.group(1).upper()
+
         if not clean_code:
             raise ValueError("El código o identificador de definición es obligatorio.")
 
         # Si parece un ticket Jira (ej: SYSC-12345 o [🎫SYSC-12345])
-        is_jira = bool(re.search(r'^[A-Za-z]+-\d+$', clean_code.replace("[", "").replace("]", "").replace("🎫", "").strip()))
+        is_jira = bool(re.search(r'^[A-Za-z][A-Za-z0-9_]*-\d+$', clean_code.replace("[", "").replace("]", "").replace("🎫", "").strip()))
         if is_jira:
-            clean_ticket = clean_code.replace("[", "").replace("]", "").replace("🎫", "").strip()
+            clean_ticket = clean_code.replace("[", "").replace("]", "").replace("🎫", "").strip().upper()
             def_id = f"[🎫{clean_ticket}]"
             final_url = url.strip() if url and url.strip() else f"{mgr.jira_base_url}{clean_ticket}"
         else:

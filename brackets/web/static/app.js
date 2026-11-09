@@ -862,7 +862,42 @@ function setupEventListeners() {
     el.btnSubmitDef.addEventListener('click', createDefinition);
   }
 
+  if (el.inputDefUrl) {
+    const handleUrlAutoDetect = () => {
+      const urlVal = el.inputDefUrl.value.trim();
+      const ticket = extractJiraTicketFromUrl(urlVal);
+      if (ticket) {
+        const curCode = el.inputDefCode ? el.inputDefCode.value.trim() : '';
+        if (!curCode || curCode.startsWith('[🎫') || !curCode.includes('[')) {
+          if (el.inputDefCode) el.inputDefCode.value = `[🎫${ticket}]`;
+        }
+      }
+    };
+    el.inputDefUrl.addEventListener('input', handleUrlAutoDetect);
+    el.inputDefUrl.addEventListener('paste', () => setTimeout(handleUrlAutoDetect, 50));
+    el.inputDefUrl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        createDefinition();
+      }
+    });
+  }
+
   if (el.inputDefCode) {
+    const handleCodeAutoDetect = () => {
+      const codeVal = el.inputDefCode.value.trim();
+      if (codeVal.startsWith('http://') || codeVal.startsWith('https://')) {
+        const ticket = extractJiraTicketFromUrl(codeVal);
+        if (ticket) {
+          el.inputDefCode.value = `[🎫${ticket}]`;
+          if (el.inputDefUrl && !el.inputDefUrl.value.trim()) {
+            el.inputDefUrl.value = codeVal;
+          }
+        }
+      }
+    };
+    el.inputDefCode.addEventListener('input', handleCodeAutoDetect);
+    el.inputDefCode.addEventListener('paste', () => setTimeout(handleCodeAutoDetect, 50));
     el.inputDefCode.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -875,14 +910,35 @@ function setupEventListeners() {
     });
   }
 
-  if (el.inputDefUrl) {
-    el.inputDefUrl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        createDefinition();
+  // Adjuntar autocompletado de definiciones al escribir [ en campos de creación directa
+  [
+    el.inputTodayTitle,
+    el.descTodayText,
+    el.inputWeekTitle,
+    el.descWeekText,
+    el.inputNoteTitle,
+    el.descNoteText,
+    el.inputTopicTitle
+  ].forEach((inputEl) => {
+    if (inputEl) attachDefinitionAutocomplete(inputEl);
+  });
+
+  // Cerrar autocomplete si se hace clic fuera
+  document.addEventListener('click', (e) => {
+    if (defAutocompleteEl && defAutocompleteEl.style.display !== 'none') {
+      if (!defAutocompleteEl.contains(e.target) && e.target !== activeAutocompleteTarget) {
+        hideDefinitionAutocomplete();
       }
-    });
-  }
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    if (activeAutocompleteTarget) positionAutocompletePopover(activeAutocompleteTarget);
+  });
+
+  window.addEventListener('scroll', () => {
+    if (activeAutocompleteTarget) positionAutocompletePopover(activeAutocompleteTarget);
+  }, true);
 
   // Atajo N global para enfocar la creación de Tarea de Hoy
   document.addEventListener('keydown', (e) => {
@@ -896,8 +952,249 @@ function setupEventListeners() {
 
 function isTicketFormat(text) {
   if (!text) return false;
-  const clean = text.replace(/[\[\]\U0001f3ab]/g, '').trim();
+  const clean = text.replace(/[\[\]🎫]/g, '').trim();
   return /^[A-Za-z]+-\d+$/.test(clean);
+}
+
+// ---------------------------------------------------------------------------
+// Autocompletado de Definiciones ([🎫ticket]) al escribir [
+// ---------------------------------------------------------------------------
+let defAutocompleteEl = null;
+let activeAutocompleteTarget = null;
+let currentFilteredDefs = [];
+let selectedDefIndex = 0;
+let bracketStartIndex = -1;
+
+function extractJiraTicketFromUrl(urlOrText) {
+  if (!urlOrText || typeof urlOrText !== 'string') return null;
+  const str = urlOrText.trim();
+  // 1. URL Jira estándar: /browse/KEY-123, selectedIssue=KEY-123, issues/KEY-123, key=KEY-123
+  const m1 = str.match(/(?:browse\/|issues?\/|selectedIssue=|key=)([\w]+-\d+)/i);
+  if (m1) return m1[1].toUpperCase();
+  // 2. Ticket aislado o con corchetes/emoji: [🎫KEY-123], KEY-123
+  const clean = str.replace(/[\[\]🎫]/g, '').trim();
+  const m2 = clean.match(/^([A-Za-z][A-Za-z0-9_]*-\d+)$/);
+  if (m2) return m2[1].toUpperCase();
+  // 3. Clave en medio de una ruta o parámetro si contiene slash o mención Jira
+  const m3 = str.match(/(?:^|[/=&#? ])([A-Za-z][A-Za-z0-9_]*-\d+)(?:[/&#? ]|$)/);
+  if (m3 && (str.includes('/') || str.toLowerCase().includes('jira') || str.toLowerCase().includes('atlassian'))) {
+    return m3[1].toUpperCase();
+  }
+  return null;
+}
+
+function getOrCreateDefAutocompletePopover() {
+  if (defAutocompleteEl) return defAutocompleteEl;
+  defAutocompleteEl = document.createElement('div');
+  defAutocompleteEl.id = 'defAutocompletePopover';
+  defAutocompleteEl.className = 'def-autocomplete-popover';
+  document.body.appendChild(defAutocompleteEl);
+  return defAutocompleteEl;
+}
+
+function hideDefinitionAutocomplete() {
+  if (defAutocompleteEl) {
+    defAutocompleteEl.style.display = 'none';
+    defAutocompleteEl.innerHTML = '';
+  }
+  activeAutocompleteTarget = null;
+  currentFilteredDefs = [];
+  selectedDefIndex = 0;
+  bracketStartIndex = -1;
+}
+
+function positionAutocompletePopover(target) {
+  if (!defAutocompleteEl || !target) return;
+  const rect = target.getBoundingClientRect();
+  const popoverWidth = Math.min(Math.max(rect.width, 280), 380);
+
+  let left = rect.left;
+  if (left + popoverWidth > window.innerWidth - 8) {
+    left = window.innerWidth - popoverWidth - 8;
+  }
+  if (left < 8) left = 8;
+
+  const popoverHeight = Math.min(currentFilteredDefs.length * 48 + 32, 220);
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+
+  let top = rect.bottom + 4;
+  if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
+    top = Math.max(8, rect.top - popoverHeight - 4);
+  }
+
+  defAutocompleteEl.style.position = 'fixed';
+  defAutocompleteEl.style.top = `${top}px`;
+  defAutocompleteEl.style.left = `${left}px`;
+  defAutocompleteEl.style.width = `${popoverWidth}px`;
+  defAutocompleteEl.style.display = 'block';
+}
+
+function renderAutocompleteItems() {
+  if (!defAutocompleteEl || !currentFilteredDefs.length) {
+    hideDefinitionAutocomplete();
+    return;
+  }
+
+  let html = `<div class="def-autocomplete-header">
+    <span>🎫 Definiciones de la semana</span>
+    <span style="font-size:0.7rem; opacity:0.7;">↵ / Tab</span>
+  </div>`;
+
+  currentFilteredDefs.forEach((def, idx) => {
+    const isSelected = idx === selectedDefIndex;
+    const defId = def.id || '';
+    const defTitle = def.title && def.title !== defId ? def.title : '';
+    const defUrl = def.url || '';
+    html += `
+      <div class="def-autocomplete-item ${isSelected ? 'active' : ''}" data-index="${idx}">
+        <div class="def-autocomplete-code">
+          <span class="def-item-icon">🎫</span>
+          <span class="def-item-id">${escapeHtml(defId)}</span>
+          ${defTitle ? `<span class="def-item-title">${escapeHtml(defTitle)}</span>` : ''}
+        </div>
+        ${defUrl ? `<div class="def-autocomplete-url">${escapeHtml(defUrl)}</div>` : ''}
+      </div>
+    `;
+  });
+
+  defAutocompleteEl.innerHTML = html;
+
+  const itemEls = defAutocompleteEl.querySelectorAll('.def-autocomplete-item');
+  itemEls.forEach((item) => {
+    const idx = parseInt(item.getAttribute('data-index'), 10);
+    item.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      selectAutocompleteItem(idx);
+    });
+    item.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      selectAutocompleteItem(idx);
+    }, { passive: false });
+  });
+
+  const activeEl = itemEls[selectedDefIndex];
+  if (activeEl) {
+    activeEl.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function selectAutocompleteItem(index) {
+  if (!activeAutocompleteTarget || index < 0 || index >= currentFilteredDefs.length) {
+    hideDefinitionAutocomplete();
+    return;
+  }
+  const def = currentFilteredDefs[index];
+  const target = activeAutocompleteTarget;
+
+  let defCode = def.id || '';
+  if (!defCode.startsWith('[')) {
+    defCode = `[${defCode}]`;
+  }
+
+  const text = target.value;
+  const cursorPos = target.selectionStart;
+  const before = text.slice(0, bracketStartIndex);
+  const after = text.slice(cursorPos);
+  const insertText = `${defCode} `;
+
+  target.value = before + insertText + after;
+  const newPos = before.length + insertText.length;
+  target.selectionStart = newPos;
+  target.selectionEnd = newPos;
+  target.focus();
+  target.dispatchEvent(new Event('input', { bubbles: true }));
+
+  hideDefinitionAutocomplete();
+}
+
+function checkAndTriggerAutocomplete(inputEl) {
+  const definitions = (state.hubData && Array.isArray(state.hubData.definitions)) ? state.hubData.definitions : [];
+  if (!definitions.length) {
+    hideDefinitionAutocomplete();
+    return;
+  }
+
+  const cursorPos = inputEl.selectionStart;
+  const textBefore = inputEl.value.slice(0, cursorPos);
+  const match = textBefore.match(/\[([^\]\s]*)$/);
+
+  if (!match) {
+    hideDefinitionAutocomplete();
+    return;
+  }
+
+  const query = match[1].toLowerCase();
+  const filtered = definitions.filter((d) => {
+    const dId = (d.id || '').toLowerCase();
+    const dTitle = (d.title || '').toLowerCase();
+    const dUrl = (d.url || '').toLowerCase();
+    return dId.includes(query) || dTitle.includes(query) || dUrl.includes(query);
+  });
+
+  if (!filtered.length) {
+    hideDefinitionAutocomplete();
+    return;
+  }
+
+  getOrCreateDefAutocompletePopover();
+  activeAutocompleteTarget = inputEl;
+  currentFilteredDefs = filtered;
+  bracketStartIndex = cursorPos - match[0].length;
+  if (selectedDefIndex >= filtered.length) {
+    selectedDefIndex = 0;
+  }
+
+  renderAutocompleteItems();
+  positionAutocompletePopover(inputEl);
+}
+
+function attachDefinitionAutocomplete(inputEl) {
+  if (!inputEl || inputEl._defAutocompleteAttached) return;
+  inputEl._defAutocompleteAttached = true;
+
+  inputEl.addEventListener('input', () => {
+    checkAndTriggerAutocomplete(inputEl);
+  });
+
+  inputEl.addEventListener('keydown', (e) => {
+    if (defAutocompleteEl && defAutocompleteEl.style.display !== 'none' && activeAutocompleteTarget === inputEl) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectedDefIndex = (selectedDefIndex + 1) % currentFilteredDefs.length;
+        renderAutocompleteItems();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectedDefIndex = (selectedDefIndex - 1 + currentFilteredDefs.length) % currentFilteredDefs.length;
+        renderAutocompleteItems();
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        selectAutocompleteItem(selectedDefIndex);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        hideDefinitionAutocomplete();
+        return;
+      }
+    }
+  });
+
+  inputEl.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (activeAutocompleteTarget === inputEl) {
+        hideDefinitionAutocomplete();
+      }
+    }, 180);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1059,12 +1356,37 @@ async function createNote() {
 
 async function createDefinition() {
   if (!el.inputDefCode) return;
-  const code = el.inputDefCode.value.trim();
-  const url = el.inputDefUrl ? el.inputDefUrl.value.trim() : '';
+  let code = el.inputDefCode.value.trim();
+  let url = el.inputDefUrl ? el.inputDefUrl.value.trim() : '';
+
+  // Auto-extraer ticket desde la URL si code está vacío
+  if (!code && url) {
+    const ticketFromUrl = extractJiraTicketFromUrl(url);
+    if (ticketFromUrl) {
+      code = `[🎫${ticketFromUrl}]`;
+    }
+  }
+
+  // Si se pegó la URL directamente en el input de código
+  if (code.startsWith('http://') || code.startsWith('https://')) {
+    const ticketInCode = extractJiraTicketFromUrl(code);
+    if (ticketInCode) {
+      if (!url) url = code;
+      code = `[🎫${ticketInCode}]`;
+    }
+  }
 
   if (!code) {
     el.inputDefCode.focus();
     return;
+  }
+
+  // Normalizar ticket a formato [🎫TICKET] si es un código Jira estándar
+  const cleanTicket = code.replace(/[\[\]🎫]/g, '').trim();
+  if (/^[A-Za-z][A-Za-z0-9_]*-\d+$/i.test(cleanTicket)) {
+    code = `[🎫${cleanTicket.toUpperCase()}]`;
+  } else if (!code.startsWith('[')) {
+    code = `[${code}]`;
   }
 
   if (el.btnSubmitDef) el.btnSubmitDef.disabled = true;
@@ -1084,6 +1406,7 @@ async function createDefinition() {
       el.inputDefCode.value = '';
       if (el.inputDefUrl) el.inputDefUrl.value = '';
       await loadHub();
+      showToast(`Enlace ${code} guardado`, 'success');
     }
   } catch (err) {
     console.error('Error creando definición:', err);
@@ -1538,6 +1861,9 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
       const btnCancel = card.querySelector('.btn-cancel-task');
       const btnDelete = card.querySelector('.btn-delete-task');
 
+      attachDefinitionAutocomplete(inputTitle);
+      attachDefinitionAutocomplete(inputDesc);
+
       inputTitle.focus();
 
       async function saveTask() {
@@ -1684,6 +2010,9 @@ function renderNotesList(notes) {
       const btnSave = card.querySelector('.btn-save-note');
       const btnCancel = card.querySelector('.btn-cancel-note');
       const btnDelete = card.querySelector('.btn-delete-note');
+
+      attachDefinitionAutocomplete(inputTitle);
+      attachDefinitionAutocomplete(inputContent);
 
       inputTitle.focus();
 
@@ -1865,6 +2194,15 @@ function renderDefinitionsList(definitions) {
       const btnCancel = card.querySelector('.btn-cancel-def');
       const btnDelete = card.querySelector('.btn-delete-def');
 
+      if (inputUrl && inputCode) {
+        inputUrl.addEventListener('input', () => {
+          const ticket = extractJiraTicketFromUrl(inputUrl.value.trim());
+          if (ticket && (!inputCode.value.trim() || inputCode.value.trim().startsWith('[🎫'))) {
+            inputCode.value = `[🎫${ticket}]`;
+          }
+        });
+      }
+
       inputCode.focus();
 
       async function saveDef() {
@@ -2009,6 +2347,8 @@ function renderTopicsList(topics) {
       const btnSave = card.querySelector('.btn-save-topic');
       const btnCancel = card.querySelector('.btn-cancel-topic');
       const btnDelete = card.querySelector('.btn-delete-topic');
+
+      attachDefinitionAutocomplete(inputTitle);
 
       inputTitle.focus();
 
