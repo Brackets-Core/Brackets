@@ -592,6 +592,19 @@ class BracketsWebService:
             raise ValueError(f"Tarea {task_id} no encontrada.")
 
         if week:
+            # Si era una tarea de la semana (sin día fijo) y se marca como resuelta, trasladarla automáticamente a hoy
+            if task.status == "done" and task.id in week.week_task_ids:
+                week.week_task_ids.remove(task.id)
+                now = datetime.now()
+                target_day = next((d for d in week.days if d.day_number == now.day), None)
+                if not target_day and week.days:
+                    target_day = week.days[0]
+                if target_day:
+                    if task.id not in target_day.task_ids:
+                        target_day.task_ids.append(task.id)
+                    mgr.sort_day_tasks_pending_first(target_day)
+                mgr.save_tasks()
+
             # Reordenar día correspondiente
             for d in week.days:
                 if task.id in d.task_ids:
@@ -889,6 +902,17 @@ class BracketsWebService:
                     week.week_task_ids.append(task.id)
                 task.is_week_task = True
                 task.day_number = None
+            elif target == "today":
+                now = datetime.now()
+                target_day = next((d for d in week.days if d.day_number == now.day), None)
+                if not target_day and week.days:
+                    target_day = week.days[0]
+                if target_day:
+                    if task.id not in target_day.task_ids:
+                        target_day.task_ids.append(task.id)
+                    mgr.sort_day_tasks_pending_first(target_day)
+                    task.is_week_task = False
+                    task.day_number = target_day.day_number
             elif target.startswith("day:"):
                 try:
                     d_num = int(target.replace("day:", ""))

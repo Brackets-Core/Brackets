@@ -127,6 +127,54 @@ class TestWebServiceAndApi(unittest.TestCase):
         self.assertTrue(res_toggle2["success"])
         self.assertEqual(res_toggle2["new_status"], "done")
 
+    def test_toggle_week_task_auto_moves_to_today(self):
+        """Verifica que una tarea semanal al resolverse se traslada automáticamente a las tareas del día actual."""
+        hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
+        res_create = self.service.create_task(
+            self.vault_dir,
+            title="Tarea de backlog semanal",
+            target="week",
+            year=2026,
+            week_number=40
+        )
+        task_id = res_create["task"]["id"]
+
+        hub_after = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
+        self.assertTrue(any(t["id"] == task_id for t in hub_after["week_tasks"]))
+        self.assertFalse(any(t["id"] == task_id for t in hub_after["today_tasks"]))
+
+        res_toggle = self.service.toggle_task(self.vault_dir, task_id, year=2026, week_number=40)
+        self.assertTrue(res_toggle["success"])
+        self.assertEqual(res_toggle["new_status"], "done")
+
+        hub_final = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
+        self.assertFalse(any(t["id"] == task_id for t in hub_final["week_tasks"]))
+        self.assertTrue(any(t["id"] == task_id for t in hub_final["today_tasks"]))
+
+    def test_schedule_week_task_to_today_button(self):
+        """Verifica el traslado manual de una tarea de la semana al día actual con target='today'."""
+        res_create = self.service.create_task(
+            self.vault_dir,
+            title="Tarea para agendar hoy",
+            target="week",
+            year=2026,
+            week_number=40
+        )
+        task_id = res_create["task"]["id"]
+
+        res_update = self.service.update_task(
+            self.vault_dir,
+            task_id=task_id,
+            target="today",
+            year=2026,
+            week_number=40
+        )
+        self.assertTrue(res_update["success"])
+
+        hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
+        self.assertFalse(any(t["id"] == task_id for t in hub["week_tasks"]))
+        self.assertTrue(any(t["id"] == task_id for t in hub["today_tasks"]))
+
     def test_create_task_in_specific_day(self):
         """Verifica creación de tarea asignada a un día específico."""
         hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
