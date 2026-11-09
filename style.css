@@ -2748,3 +2748,59 @@ body {
   margin-top: 3px;
   font-family: var(--font-mono);
 }
+
+/* ==========================================================================
+   Selector Interactivo de Patrón Semanal de Trabajo (Lunes a Viernes)
+   ========================================================================== */
+.work-pattern-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+
+.work-pattern-day-btn {
+  flex: 1;
+  min-width: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.work-pattern-day-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+}
+
+.work-pattern-day-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.work-pattern-day-letter {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.work-pattern-day-emoji {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.work-pattern-day-loc {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: capitalize;
+}
