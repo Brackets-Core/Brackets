@@ -679,17 +679,22 @@ body {
   transform: rotate(-90deg);
 }
 
+.section-content {
+  padding-left: 14px;
+}
+
 .collapsible-section.collapsed .section-content {
   display: none;
 }
 
 .section-title {
-  font-size: 0.92rem;
+  font-size: 1.05rem;
   font-weight: 700;
+  letter-spacing: -0.01em;
   margin-bottom: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 .task-count-badge {
@@ -745,7 +750,7 @@ body {
 }
 
 .task-card.done {
-  opacity: 0.65;
+  opacity: 1;
 }
 
 .task-card.cancelled {
@@ -780,7 +785,7 @@ body {
 }
 
 .task-card.done .task-title {
-  color: var(--text-dim);
+  color: var(--text-main);
 }
 
 .task-card.cancelled .task-title {
