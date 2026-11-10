@@ -1023,13 +1023,18 @@ function isTicketFormat(text) {
 }
 
 // ---------------------------------------------------------------------------
-// Autocompletado de Definiciones ([🎫ticket]) al escribir [
+// Autocompletado de Definiciones ([🎫ticket]) y Personas (@handle)
 // ---------------------------------------------------------------------------
 let defAutocompleteEl = null;
 let activeAutocompleteTarget = null;
+let activeAutocompleteMode = 'definition'; // 'definition' | 'person'
 let currentFilteredDefs = [];
 let selectedDefIndex = 0;
 let bracketStartIndex = -1;
+
+function normalizeSearchStr(str) {
+  return String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
 
 function extractJiraTicketFromUrl(urlOrText) {
   if (!urlOrText || typeof urlOrText !== 'string') return null;
@@ -1102,27 +1107,51 @@ function renderAutocompleteItems() {
     return;
   }
 
-  let html = `<div class="def-autocomplete-header">
-    <span>🎫 Definiciones de la semana</span>
-    <span style="font-size:0.7rem; opacity:0.7;">↵ / Tab</span>
-  </div>`;
+  let html = '';
+  if (activeAutocompleteMode === 'person') {
+    html = `<div class="def-autocomplete-header">
+      <span>👤 Personas guardadas</span>
+      <span style="font-size:0.7rem; opacity:0.7;">↵ / Tab</span>
+    </div>`;
 
-  currentFilteredDefs.forEach((def, idx) => {
-    const isSelected = idx === selectedDefIndex;
-    const defId = def.id || '';
-    const defTitle = def.title && def.title !== defId ? def.title : '';
-    const defUrl = def.url || '';
-    html += `
-      <div class="def-autocomplete-item ${isSelected ? 'active' : ''}" data-index="${idx}">
-        <div class="def-autocomplete-code">
-          <span class="def-item-icon">🎫</span>
-          <span class="def-item-id">${escapeHtml(defId)}</span>
-          ${defTitle ? `<span class="def-item-title">${escapeHtml(defTitle)}</span>` : ''}
+    currentFilteredDefs.forEach((person, idx) => {
+      const isSelected = idx === selectedDefIndex;
+      const handle = person.handle || '';
+      const cleanRaw = handle.replace(/^@/, '');
+      const displayName = person.name && person.name !== cleanRaw ? person.name : '';
+      html += `
+        <div class="def-autocomplete-item ${isSelected ? 'active' : ''}" data-index="${idx}">
+          <div class="def-autocomplete-code">
+            <span class="def-item-icon">👤</span>
+            <span class="def-item-id">${escapeHtml(handle)}</span>
+            ${displayName ? `<span class="def-item-title">${escapeHtml(displayName)}</span>` : ''}
+          </div>
         </div>
-        ${defUrl ? `<div class="def-autocomplete-url">${escapeHtml(defUrl)}</div>` : ''}
-      </div>
-    `;
-  });
+      `;
+    });
+  } else {
+    html = `<div class="def-autocomplete-header">
+      <span>🎫 Definiciones de la semana</span>
+      <span style="font-size:0.7rem; opacity:0.7;">↵ / Tab</span>
+    </div>`;
+
+    currentFilteredDefs.forEach((def, idx) => {
+      const isSelected = idx === selectedDefIndex;
+      const defId = def.id || '';
+      const defTitle = def.title && def.title !== defId ? def.title : '';
+      const defUrl = def.url || '';
+      html += `
+        <div class="def-autocomplete-item ${isSelected ? 'active' : ''}" data-index="${idx}">
+          <div class="def-autocomplete-code">
+            <span class="def-item-icon">🎫</span>
+            <span class="def-item-id">${escapeHtml(defId)}</span>
+            ${defTitle ? `<span class="def-item-title">${escapeHtml(defTitle)}</span>` : ''}
+          </div>
+          ${defUrl ? `<div class="def-autocomplete-url">${escapeHtml(defUrl)}</div>` : ''}
+        </div>
+      `;
+    });
+  }
 
   defAutocompleteEl.innerHTML = html;
 
@@ -1150,19 +1179,28 @@ function selectAutocompleteItem(index) {
     hideDefinitionAutocomplete();
     return;
   }
-  const def = currentFilteredDefs[index];
+  const item = currentFilteredDefs[index];
   const target = activeAutocompleteTarget;
 
-  let defCode = def.id || '';
-  if (!defCode.startsWith('[')) {
-    defCode = `[${defCode}]`;
+  let insertText = '';
+  if (activeAutocompleteMode === 'person') {
+    let handle = item.handle || '';
+    if (handle && !handle.startsWith('@')) {
+      handle = `@${handle}`;
+    }
+    insertText = `${handle} `;
+  } else {
+    let defCode = item.id || '';
+    if (!defCode.startsWith('[')) {
+      defCode = `[${defCode}]`;
+    }
+    insertText = `${defCode} `;
   }
 
   const text = target.value;
   const cursorPos = target.selectionStart;
   const before = text.slice(0, bracketStartIndex);
   const after = text.slice(cursorPos);
-  const insertText = `${defCode} `;
 
   target.value = before + insertText + after;
   const newPos = before.length + insertText.length;
@@ -1175,38 +1213,53 @@ function selectAutocompleteItem(index) {
 }
 
 function checkAndTriggerAutocomplete(inputEl) {
-  const definitions = (state.hubData && Array.isArray(state.hubData.definitions)) ? state.hubData.definitions : [];
-  if (!definitions.length) {
-    hideDefinitionAutocomplete();
-    return;
-  }
-
   const cursorPos = inputEl.selectionStart;
   const textBefore = inputEl.value.slice(0, cursorPos);
-  const match = textBefore.match(/\[([^\]\s]*)$/);
 
-  if (!match) {
-    hideDefinitionAutocomplete();
-    return;
+  // 1. Detectar '[' para Definiciones
+  const defMatch = textBefore.match(/\[([^\]\s]*)$/);
+  // 2. Detectar '@' para Personas guardadas
+  const mentionMatch = textBefore.match(/(?:^|[\s(\[])(@([A-Za-zÁÉÍÓÚáéíóúñÑ0-9_-]*))$/);
+
+  let mode = null;
+  let filtered = [];
+  let startIndex = -1;
+
+  if (defMatch) {
+    const definitions = (state.hubData && Array.isArray(state.hubData.definitions)) ? state.hubData.definitions : [];
+    const query = normalizeSearchStr(defMatch[1]);
+    filtered = definitions.filter((d) => {
+      return (
+        normalizeSearchStr(d.id).includes(query) ||
+        normalizeSearchStr(d.title).includes(query) ||
+        normalizeSearchStr(d.url).includes(query)
+      );
+    });
+    mode = 'definition';
+    startIndex = cursorPos - defMatch[0].length;
+  } else if (mentionMatch) {
+    const people = (state.hubData && Array.isArray(state.hubData.people)) ? state.hubData.people : [];
+    const query = normalizeSearchStr(mentionMatch[2]);
+    filtered = people.filter((p) => {
+      return (
+        normalizeSearchStr(p.handle).includes(query) ||
+        normalizeSearchStr(p.name).includes(query)
+      );
+    });
+    mode = 'person';
+    startIndex = cursorPos - mentionMatch[1].length;
   }
 
-  const query = match[1].toLowerCase();
-  const filtered = definitions.filter((d) => {
-    const dId = (d.id || '').toLowerCase();
-    const dTitle = (d.title || '').toLowerCase();
-    const dUrl = (d.url || '').toLowerCase();
-    return dId.includes(query) || dTitle.includes(query) || dUrl.includes(query);
-  });
-
-  if (!filtered.length) {
+  if (!mode || !filtered.length) {
     hideDefinitionAutocomplete();
     return;
   }
 
   getOrCreateDefAutocompletePopover();
   activeAutocompleteTarget = inputEl;
+  activeAutocompleteMode = mode;
   currentFilteredDefs = filtered;
-  bracketStartIndex = cursorPos - match[0].length;
+  bracketStartIndex = startIndex;
   if (selectedDefIndex >= filtered.length) {
     selectedDefIndex = 0;
   }
@@ -1227,27 +1280,27 @@ function attachDefinitionAutocomplete(inputEl) {
     if (defAutocompleteEl && defAutocompleteEl.style.display !== 'none' && activeAutocompleteTarget === inputEl) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         selectedDefIndex = (selectedDefIndex + 1) % currentFilteredDefs.length;
         renderAutocompleteItems();
         return;
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         selectedDefIndex = (selectedDefIndex - 1 + currentFilteredDefs.length) % currentFilteredDefs.length;
         renderAutocompleteItems();
         return;
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         selectAutocompleteItem(selectedDefIndex);
         return;
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         hideDefinitionAutocomplete();
         return;
       }
