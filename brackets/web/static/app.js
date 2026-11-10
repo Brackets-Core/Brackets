@@ -1007,7 +1007,11 @@ function setupEventListeners() {
     const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
     if ((e.key === 'n' || e.key === 'N') && !isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      if (el.inputTodayTitle) el.inputTodayTitle.focus();
+      if (el.inputTodayTitle) {
+        el.inputTodayTitle.focus();
+      } else {
+        openFabQuickCreateModal('today_task');
+      }
     }
   });
 }

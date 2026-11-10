@@ -110,37 +110,6 @@
           </button>
         </div>
       <div id="todayTasksContent" class="section-content">
-        <!-- Creación integrada de Tarea de Hoy -->
-        <div class="inline-create-card" id="createTodayTaskCard">
-          <div class="inline-create-main">
-            <span class="inline-create-icon">📋</span>
-            <input 
-              type="text" 
-              id="inputTodayTitle" 
-              class="inline-create-input" 
-              placeholder="Nueva tarea para hoy... (ej: Reunión: Sync #[PROYECTO])" 
-              autocomplete="off"
-            >
-            <button type="button" id="btnToggleTodayStatus" class="btn-status-pill" title="Alternar estado: Pendiente [ ] / Hecha [x]">
-              Pendiente [ ]
-            </button>
-            <button type="button" id="btnToggleTodayDesc" class="btn-icon-pill" title="Añadir descripción o viñetas">
-              💬
-            </button>
-            <button type="button" id="btnSubmitTodayTask" class="btn-inline-submit">
-              Añadir
-            </button>
-          </div>
-          <div id="descBoxTodayTask" class="inline-create-desc" style="display: none;">
-            <textarea 
-              id="descTodayText" 
-              class="inline-create-textarea" 
-              placeholder="💬 Descripción / notas de la tarea (opcional, viñetas)... (Ctrl+Enter para guardar)" 
-              rows="2"
-            ></textarea>
-          </div>
-        </div>
-
         <div id="todayTasksList" class="task-list">
           <!-- Tareas inyectadas dinámicamente -->
         </div>
@@ -164,23 +133,6 @@
           </button>
         </div>
       <div id="weekTopicsContent" class="section-content">
-        <!-- Creación integrada de Topic -->
-        <div class="inline-create-card" id="createTopicCard">
-          <div class="inline-create-main">
-            <span class="inline-create-icon">🎯</span>
-            <input 
-              type="text" 
-              id="inputTopicTitle" 
-              class="inline-create-input" 
-              placeholder="Nuevo topic de la semana... (ej: Core Engine #[Core])" 
-              autocomplete="off"
-            >
-            <button type="button" id="btnSubmitTopic" class="btn-inline-submit">
-              Añadir Topic
-            </button>
-          </div>
-        </div>
-
         <div id="topicsContainer" class="topics-container">
           <!-- Topics inyectados dinámicamente -->
         </div>
@@ -204,37 +156,6 @@
           </button>
         </div>
       <div id="weekTasksContent" class="section-content">
-        <!-- Creación integrada de Tarea Semanal -->
-        <div class="inline-create-card" id="createWeekTaskCard">
-          <div class="inline-create-main">
-            <span class="inline-create-icon">⏳</span>
-            <input 
-              type="text" 
-              id="inputWeekTitle" 
-              class="inline-create-input" 
-              placeholder="Nueva tarea semanal (sin día fijo)..." 
-              autocomplete="off"
-            >
-            <button type="button" id="btnToggleWeekStatus" class="btn-status-pill" title="Alternar estado: Pendiente [ ] / Hecha [x]">
-              Pendiente [ ]
-            </button>
-            <button type="button" id="btnToggleWeekDesc" class="btn-icon-pill" title="Añadir descripción o viñetas">
-              💬
-            </button>
-            <button type="button" id="btnSubmitWeekTask" class="btn-inline-submit">
-              Añadir
-            </button>
-          </div>
-          <div id="descBoxWeekTask" class="inline-create-desc" style="display: none;">
-            <textarea 
-              id="descWeekText" 
-              class="inline-create-textarea" 
-              placeholder="💬 Descripción / notas de la tarea (opcional, viñetas)... (Ctrl+Enter para guardar)" 
-              rows="2"
-            ></textarea>
-          </div>
-        </div>
-
         <div id="weekTasksList" class="task-list">
           <!-- Tareas semanales inyectadas dinámicamente -->
         </div>
@@ -258,34 +179,6 @@
           </button>
         </div>
       <div id="weekNotesContent" class="section-content">
-        <!-- Creación integrada de Nota -->
-        <div class="inline-create-card" id="createNoteCard">
-          <div class="inline-create-main">
-            <span class="inline-create-icon">📝</span>
-            <input 
-              type="text" 
-              id="inputNoteTitle" 
-              class="inline-create-input" 
-              placeholder="Título de la nota... (ej: Incidencia servidor InfluxDB)" 
-              autocomplete="off"
-            >
-            <button type="button" id="btnToggleNoteDesc" class="btn-icon-pill" title="Añadir contenido / viñetas">
-              💬
-            </button>
-            <button type="button" id="btnSubmitNote" class="btn-inline-submit">
-              Añadir Nota
-            </button>
-          </div>
-          <div id="descBoxNote" class="inline-create-desc" style="display: none;">
-            <textarea 
-              id="descNoteText" 
-              class="inline-create-textarea" 
-              placeholder="Contenido / notas (viñetas, una por línea)... (Ctrl+Enter para guardar)" 
-              rows="3"
-            ></textarea>
-          </div>
-        </div>
-
         <div id="notesContainer" class="notes-container">
           <!-- Notas inyectadas dinámicamente -->
         </div>
@@ -309,30 +202,6 @@
           </button>
         </div>
       <div id="weekDefsContent" class="section-content">
-        <!-- Creación integrada de Definición / Enlace -->
-        <div class="inline-create-card" id="createDefCard">
-          <div class="inline-create-main def-create-main">
-            <span class="inline-create-icon">🎫</span>
-            <input 
-              type="text" 
-              id="inputDefCode" 
-              class="inline-create-input def-code-input" 
-              placeholder="Código o Ticket... (ej: SYSC-73125 o 📂DOCS)" 
-              autocomplete="off"
-            >
-            <input 
-              type="text" 
-              id="inputDefUrl" 
-              class="inline-create-input def-url-input" 
-              placeholder="URL... (opcional para tickets Jira)" 
-              autocomplete="off"
-            >
-            <button type="button" id="btnSubmitDef" class="btn-inline-submit">
-              Guardar Enlace
-            </button>
-          </div>
-        </div>
-
         <div id="definitionsContainer" class="definitions-container">
           <!-- Definiciones inyectadas dinámicamente -->
         </div>
