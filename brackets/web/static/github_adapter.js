@@ -650,6 +650,55 @@
     return out;
   }
 
+  function parsePeopleYaml(yamlText) {
+    if (!yamlText) return [];
+    const lines = yamlText.split(/\r?\n/);
+    const people = [];
+    let current = null;
+
+    for (let rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      if (trimmed.startsWith('- id:')) {
+        if (current && current.handle) people.push(current);
+        current = {
+          id: trimmed.replace(/^- id:\s*/, '').trim().replace(/^['"]|['"]$/g, ''),
+          handle: '',
+          name: '',
+          created_at: '',
+          status: 'active'
+        };
+        continue;
+      }
+
+      if (!current) continue;
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx > 0) {
+        const key = trimmed.slice(0, colonIdx).trim();
+        const val = trimmed.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+        if (key === 'handle') current.handle = val;
+        else if (key === 'name') current.name = val;
+        else if (key === 'created_at') current.created_at = val;
+        else if (key === 'status') current.status = val;
+      }
+    }
+    if (current && current.handle) people.push(current);
+    return people;
+  }
+
+  function serializePeopleYaml(peopleList) {
+    let out = 'people:\n';
+    for (const p of peopleList) {
+      out += `- id: ${p.id}\n`;
+      out += `  handle: '${(p.handle || '').replace(/'/g, "''")}'\n`;
+      out += `  name: "${(p.name || '').replace(/"/g, '\\"')}"\n`;
+      if (p.created_at) out += `  created_at: '${p.created_at}'\n`;
+      out += `  status: ${p.status || 'active'}\n`;
+    }
+    return out;
+  }
+
   function parseRecurringTasksYaml(yamlText) {
     if (!yamlText) return [];
     const lines = yamlText.split(/\r?\n/);
@@ -1213,6 +1262,69 @@
   const GitHubVaultEngine = {
     activeWeekCache: new Map(),
     calendarCache: new Map(),
+    peopleCache: new Map(),
+
+    async getPeople(vault) {
+      if (this.peopleCache.has(vault.id)) {
+        return this.peopleCache.get(vault.id);
+      }
+      let list = [];
+      try {
+        const fileData = await GitHubRestClient.getFile(vault, 'data/tables/people.yaml', { useCache: true });
+        if (fileData && fileData.content) {
+          list = parsePeopleYaml(fileData.content);
+        }
+      } catch (_) {}
+      this.peopleCache.set(vault.id, list);
+      return list;
+    },
+
+    async savePeople(vault, peopleList) {
+      const yamlStr = serializePeopleYaml(peopleList);
+      await GitHubRestClient.putFile(vault, 'data/tables/people.yaml', yamlStr, 'chore(people): update people.yaml');
+      this.peopleCache.set(vault.id, peopleList);
+    },
+
+    async autoRegisterPeopleInText(vault, ...texts) {
+      const combined = texts.filter(Boolean).join(' ');
+      if (!combined || !combined.includes('@')) return;
+      const re = /(?:^|[\s(\[])@([A-Za-zÁÉÍÓÚáéíóúñÑ0-9_-]+)/g;
+      const foundHandles = new Set();
+      let m;
+      while ((m = re.exec(combined)) !== null) {
+        if (m[1]) foundHandles.add('@' + m[1]);
+      }
+      if (foundHandles.size === 0) return;
+
+      const list = await this.getPeople(vault);
+      const existingLower = new Set(list.map((p) => (p.handle || '').toLowerCase()));
+      let changed = false;
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      for (const handle of foundHandles) {
+        if (!existingLower.has(handle.toLowerCase())) {
+          const cleanRaw = handle.slice(1);
+          const formattedName = cleanRaw.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+          const nextNum = list.length + 1;
+          list.push({
+            id: `PER-${String(nextNum).padStart(4, '0')}`,
+            handle,
+            name: formattedName,
+            created_at: todayStr,
+            status: 'active'
+          });
+          existingLower.add(handle.toLowerCase());
+          changed = true;
+        }
+      }
+      if (changed) {
+        try {
+          await this.savePeople(vault, list);
+        } catch (err) {
+          console.warn('No se pudo guardar people.yaml en GitHub:', err);
+        }
+      }
+    },
 
     async getWorkCalendar(vault) {
       if (this.calendarCache.has(vault.id)) {
@@ -1331,7 +1443,8 @@
         { path: 'data/work_calendar.yaml', content: defaultCalYaml },
         { path: 'data/task_types.yaml', content: defaultTaskTypesYaml },
         { path: 'data/tables/recurring_tasks.yaml', content: 'recurring_tasks: []\n' },
-        { path: 'data/tables/tasks.yaml', content: 'tasks: []\n' }
+        { path: 'data/tables/tasks.yaml', content: 'tasks: []\n' },
+        { path: 'data/tables/people.yaml', content: 'people: []\n' }
       ];
 
       for (const item of filesToCheck) {
@@ -1461,6 +1574,41 @@
       weekState.week_tasks.forEach((t) => t.project_id && projSet.add(t.project_id));
       weekState.days.forEach((d) => d.tasks.forEach((t) => t.project_id && projSet.add(t.project_id)));
 
+      // Recopilar personas guardadas (people.yaml) + menciones en la semana actual
+      const savedPeople = await this.getPeople(vault);
+      const peopleMap = new Map();
+      savedPeople.forEach((p) => {
+        if (p.handle && p.status !== 'inactive') {
+          peopleMap.set(p.handle.toLowerCase(), {
+            id: p.id,
+            handle: p.handle,
+            name: p.name || p.handle.replace(/^@/, '')
+          });
+        }
+      });
+      const scanMentionTexts = [
+        ...weekState.topics.map((t) => t.title),
+        ...weekState.week_tasks.flatMap((t) => [t.title, t.description]),
+        ...weekState.days.flatMap((d) => d.tasks.flatMap((t) => [t.title, t.description])),
+        ...weekState.notes.flatMap((n) => [n.title, ...(n.content || [])])
+      ];
+      const mentionRe = /(?:^|[\s(\[])@([A-Za-zÁÉÍÓÚáéíóúñÑ0-9_-]+)/g;
+      scanMentionTexts.forEach((txt) => {
+        if (!txt || !txt.includes('@')) return;
+        let m;
+        while ((m = mentionRe.exec(txt)) !== null) {
+          const handle = '@' + m[1];
+          if (!peopleMap.has(handle.toLowerCase())) {
+            peopleMap.set(handle.toLowerCase(), {
+              id: null,
+              handle,
+              name: m[1].replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ')
+            });
+          }
+        }
+      });
+      const peopleData = Array.from(peopleMap.values()).sort((a, b) => a.handle.localeCompare(b.handle));
+
       return {
         vault: {
           name: vault.name,
@@ -1488,6 +1636,7 @@
         notes: weekState.notes,
         topics: weekState.topics,
         definitions: weekState.definitions,
+        people: peopleData,
         available_weeks: weekState.available_weeks || [],
         projects: Array.from(projSet).map((code) => ({ id: code, name: code })),
         top_menu: DEFAULT_WEB_TOP_MENU
@@ -1524,6 +1673,8 @@
       // 2. POST /api/sync o /api/sync/all
       if (method === 'POST' && (pathname === '/api/sync' || pathname === '/api/sync/all')) {
         GitHubRestClient.clearCache();
+        this.peopleCache.delete(vault.id);
+        this.calendarCache.delete(vault.id);
         const yearParam = bodyObj && bodyObj.year ? Number(bodyObj.year) : null;
         const weekParam = bodyObj && bodyObj.week ? Number(bodyObj.week) : null;
         const refreshed = await this.loadOrCreateWeek(vault, yearParam, weekParam);
@@ -1576,6 +1727,7 @@
         }
 
         await this.saveWeekState(vault, weekState, `feat(task): add "${clean_title}"`);
+        await this.autoRegisterPeopleInText(vault, clean_title, newTask.description);
         return { success: true, task: newTask };
       }
 
@@ -1670,6 +1822,7 @@
           }
 
           await this.saveWeekState(vault, weekState, `chore(task): update "${found.task.title}"`);
+          await this.autoRegisterPeopleInText(vault, found.task.title, found.task.description);
           return { success: true, task: found.task };
         }
       }
@@ -1700,6 +1853,7 @@
         };
         weekState.topics.push(newTop);
         await this.saveWeekState(vault, weekState, `feat(topic): add "${clean_title}"`);
+        await this.autoRegisterPeopleInText(vault, clean_title);
         return { success: true, topic: newTop };
       }
       const mTopic = pathname.match(/^\/api\/topics\/([^/]+)$/);
@@ -1717,6 +1871,7 @@
           weekState.topics[idx].title = clean_title;
           if (project_id || bodyObj.project_id) weekState.topics[idx].project_id = bodyObj.project_id || project_id;
           await this.saveWeekState(vault, weekState, `chore(topic): update "${clean_title}"`);
+          await this.autoRegisterPeopleInText(vault, clean_title);
           return { success: true, topic: weekState.topics[idx] };
         }
       }
@@ -1738,6 +1893,7 @@
         };
         weekState.notes.push(newNote);
         await this.saveWeekState(vault, weekState, `feat(note): add "${clean_title}"`);
+        await this.autoRegisterPeopleInText(vault, clean_title, ...bullets);
         return { success: true, note: newNote };
       }
       const mNote = pathname.match(/^\/api\/notes\/([^/]+)$/);
@@ -1765,6 +1921,7 @@
                   .filter(Boolean);
           }
           await this.saveWeekState(vault, weekState, `chore(note): update "${weekState.notes[idx].title}"`);
+          await this.autoRegisterPeopleInText(vault, weekState.notes[idx].title, ...(weekState.notes[idx].content || []));
           return { success: true, note: weekState.notes[idx] };
         }
       }

@@ -148,6 +148,18 @@ class BracketsWebService:
         md_path = generate_filename(week.year, week.month, week.week_number, directory=vault_path)
         BitacoraRenderer.render_and_save_week(week, mgr, md_path)
 
+    def _auto_register_people_in_text(self, mgr: EntityManager, *texts: Optional[str]) -> None:
+        """Detecta menciones @handle al crear/editar y las registra en people.yaml."""
+        combined = " ".join(t for t in texts if t)
+        if not combined or "@" not in combined:
+            return
+        mentions = set(re.findall(r'(?:^|[\s(\[])@([A-Za-zÁÉÍÓÚáéíóúñÑ0-9_-]+)', combined))
+        if not mentions:
+            return
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        for m in mentions:
+            mgr.ensure_person(handle=m, created_at=today_str)
+
     def _get_or_create_week(
         self,
         vault_path: str,
@@ -417,6 +429,21 @@ class BracketsWebService:
         ]
         top_menu = self._load_web_top_menu(vault_path)
 
+        people_seen = set()
+        people_data = []
+        for p in mgr.people.values():
+            if getattr(p, "status", "active") != "active" or not p.handle:
+                continue
+            if p.handle in people_seen:
+                continue
+            people_seen.add(p.handle)
+            people_data.append({
+                "id": p.id,
+                "handle": p.handle,
+                "name": p.name or p.handle.lstrip("@")
+            })
+        people_data.sort(key=lambda x: x["handle"].lower())
+
         return {
             "vault": {
                 "name": os.path.basename(vault_path),
@@ -444,6 +471,7 @@ class BracketsWebService:
             "topics": topics_data,
             "notes": notes_data,
             "definitions": definitions_data,
+            "people": people_data,
             "task_types": task_types,
             "available_weeks": available_weeks,
             "projects": projects_list,
@@ -562,6 +590,8 @@ class BracketsWebService:
                     mgr.sort_day_tasks_pending_first(d)
                     break
         mgr.save_week(week)
+
+        self._auto_register_people_in_text(mgr, clean_title, description)
 
         # Regenerar bitácora Markdown
         self._render_and_save_week_md(vault_path, week, mgr)
@@ -743,6 +773,7 @@ class BracketsWebService:
             project_id=final_proj
         )
 
+        self._auto_register_people_in_text(mgr, clean_title, *bullets)
         self._render_and_save_week_md(vault_path, week, mgr)
         return {
             "success": True,
@@ -849,6 +880,7 @@ class BracketsWebService:
             week.topic_ids.append(topic.id)
             mgr.save_week(week)
 
+        self._auto_register_people_in_text(mgr, clean_title)
         self._render_and_save_week_md(vault_path, week, mgr)
 
         return {
@@ -941,6 +973,7 @@ class BracketsWebService:
 
         mgr.save_tasks()
         mgr.save_week(week)
+        self._auto_register_people_in_text(mgr, task.title, task.description)
         self._render_and_save_week_md(vault_path, week, mgr)
         return {"success": True, "task": self._serialize_task(task)}
 
@@ -1000,6 +1033,7 @@ class BracketsWebService:
             topic.project_id = proj_tag
 
         mgr.save_topics()
+        self._auto_register_people_in_text(mgr, clean_title)
         self._render_and_save_week_md(vault_path, week, mgr)
         return {
             "success": True,
@@ -1071,6 +1105,7 @@ class BracketsWebService:
             note.content = bullets
 
         mgr.save_notes()
+        self._auto_register_people_in_text(mgr, note.title, *(note.content or []))
         self._render_and_save_week_md(vault_path, week, mgr)
         return {
             "success": True,

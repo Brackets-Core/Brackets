@@ -362,6 +362,22 @@ class TestWebServiceAndApi(unittest.TestCase):
         app_res = self.service.apply_calendar(vault_identifier=self.vault_dir, year=2026, week_number=40)
         self.assertTrue(app_res["success"])
 
+    def test_people_auto_registration_and_hub_data(self):
+        """Verifica el registro automático de personas (@handle) y su exposición en el Hub."""
+        res = self.service.create_task(
+            vault_identifier=self.vault_dir,
+            title="Reunión: Sync con @AlbertoGuerra y @AdriaRauret",
+            target="today",
+            year=2026,
+            week_number=40
+        )
+        self.assertTrue(res["success"])
+
+        hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=40)
+        handles = [p["handle"] for p in hub.get("people", [])]
+        self.assertIn("@AlbertoGuerra", handles)
+        self.assertIn("@AdriaRauret", handles)
+
 class TestHttpServerIntegration(unittest.TestCase):
     """Pruebas de integración HTTP sobre un servidor local efímero."""
 
