@@ -87,7 +87,7 @@ body {
   width: 100%;
   max-width: 820px;
   margin: 0 auto;
-  padding: calc(16px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(88px + env(safe-area-inset-bottom));
   box-sizing: border-box;
   overflow-x: hidden;
 }
@@ -598,8 +598,17 @@ body {
 
 /* Sections & Task Lists */
 .collapsible-section {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
   margin-bottom: 0;
-  transition: all 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.collapsible-section:hover {
+  border-color: var(--border-strong);
 }
 
 .collapsible-section .task-list,
@@ -608,11 +617,20 @@ body {
 }
 
 .collapsible-section.collapsed {
+  padding: 6px 12px;
   margin-bottom: 0;
 }
 
 .collapsible-section.collapsed .section-header-row {
   margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.collapsible-section:not(.collapsed) .section-header-row {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .section-header-btn {
@@ -707,15 +725,15 @@ body {
 .task-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 4px;
 }
 
 .task-card {
-  background-color: var(--bg-surface);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 6px 10px;
+  padding: 7px 10px;
   display: flex;
   flex-direction: column;
   transition: all 0.15s ease;
@@ -723,7 +741,7 @@ body {
 
 .task-card:hover {
   border-color: var(--border-strong);
-  background-color: var(--bg-card);
+  background-color: var(--bg-card-hover);
 }
 
 .task-card.done {
@@ -821,10 +839,11 @@ body {
 }
 
 .note-card {
-  background-color: var(--bg-surface);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
+  transition: all 0.15s ease;
 }
 
 .note-header {
@@ -870,15 +889,15 @@ body {
 .definitions-container {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 4px;
 }
 
 .definition-card {
-  background-color: var(--bg-surface);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 6px 10px;
+  padding: 7px 10px;
   display: flex;
   align-items: center;
   transition: all 0.15s ease;
@@ -887,7 +906,7 @@ body {
 
 .definition-card:hover {
   border-color: var(--border-strong);
-  background-color: var(--bg-card);
+  background-color: var(--bg-card-hover);
 }
 
 .def-main-row {
@@ -1020,15 +1039,15 @@ body {
 .topics-container {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 4px;
 }
 
 .topic-card {
-  background-color: var(--bg-surface);
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 5px 10px;
+  padding: 6px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1038,7 +1057,7 @@ body {
 
 .topic-card:hover {
   border-color: var(--border-strong);
-  background-color: var(--bg-card);
+  background-color: var(--bg-card-hover);
 }
 
 .topic-main-info {
@@ -1214,7 +1233,7 @@ body {
 
 .note-card:hover {
   border-color: var(--border-strong);
-  background-color: var(--bg-card);
+  background-color: var(--bg-card-hover);
 }
 
 .edit-form-box {
@@ -1322,17 +1341,18 @@ body {
    ========================================================================== */
 
 .inline-create-card {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+  background-color: var(--bg-input);
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
   padding: 5px 10px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   transition: all 0.15s ease;
 }
 
 .inline-create-card:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
   background-color: var(--bg-card);
 }
 
@@ -1481,13 +1501,13 @@ body {
 .sections-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .section-header-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 6px;
 }
 
@@ -1497,7 +1517,8 @@ body {
   font-size: 1.1rem;
   padding: 4px 6px;
   user-select: none;
-  opacity: 0.4;
+  touch-action: none;
+  opacity: 0.5;
   transition: opacity 0.15s, color 0.15s;
   display: flex;
   align-items: center;
@@ -1519,39 +1540,8 @@ body {
   margin: 0;
 }
 
-.section-reorder-btns {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  opacity: 0.45;
-  transition: opacity 0.15s;
-  flex-shrink: 0;
-}
-
-.section-header-row:hover .section-reorder-btns {
-  opacity: 1;
-}
-
-.btn-section-nav {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 3px 6px;
-  font-size: 0.7rem;
-  line-height: 1;
-  transition: all 0.15s ease;
-}
-
-.btn-section-nav:hover {
-  background: var(--bg-card-hover);
-  color: var(--text-main);
-  border-color: var(--accent);
-}
-
 .collapsible-section.dragging-section {
-  opacity: 0.35;
+  opacity: 0.4;
   outline: 2px dashed var(--accent);
   border-radius: var(--radius-md);
 }
@@ -1565,9 +1555,10 @@ body {
   cursor: grab;
   color: var(--text-dim);
   font-size: 0.95rem;
-  padding: 2px 4px;
+  padding: 3px 5px;
   user-select: none;
-  opacity: 0.3;
+  touch-action: none;
+  opacity: 0.45;
   transition: opacity 0.15s, color 0.15s;
   display: inline-flex;
   align-items: center;
@@ -1587,46 +1578,11 @@ body {
   cursor: grabbing;
 }
 
-.item-reorder-btns {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.task-card:hover .item-reorder-btns,
-.note-card:hover .item-reorder-btns,
-.topic-card:hover .item-reorder-btns,
-.definition-card:hover .item-reorder-btns {
-  opacity: 0.85;
-}
-
-.btn-item-nav {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  color: var(--text-dim);
-  cursor: pointer;
-  padding: 2px 5px;
-  font-size: 0.65rem;
-  line-height: 1;
-  transition: all 0.15s;
-}
-
-.btn-item-nav:hover {
-  background: var(--bg-card-hover);
-  color: var(--text-main);
-  border-color: var(--accent);
-}
-
 .task-card.item-dragging,
 .note-card.item-dragging,
 .topic-card.item-dragging,
 .definition-card.item-dragging {
-  opacity: 0.35;
+  opacity: 0.4;
   outline: 2px dashed var(--accent);
 }
 
@@ -2803,4 +2759,142 @@ body {
   color: var(--text-dim);
   font-weight: 600;
   text-transform: capitalize;
+}
+
+/* ==========================================================================
+   Floating Action Button (FAB) + Speed Dial Menu
+   ========================================================================== */
+.fab-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 980;
+  animation: fabFadeIn 0.15s ease-out;
+}
+
+@keyframes fabFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fab-container {
+  position: fixed;
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  right: 22px;
+  z-index: 990;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.fab-main-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, box-shadow 0.2s ease;
+}
+
+.fab-main-btn:hover {
+  background: var(--accent-hover);
+  transform: scale(1.06);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.55), 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+.fab-main-btn:active {
+  transform: scale(0.95);
+}
+
+.fab-plus-icon {
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fab-container.open .fab-plus-icon {
+  transform: rotate(45deg);
+}
+
+.fab-container.open .fab-main-btn {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.fab-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  animation: fabMenuSlideUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fabMenuSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fab-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.fab-menu-item:hover {
+  transform: translateX(-3px);
+}
+
+.fab-menu-label {
+  background: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 7px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+}
+
+.fab-menu-item:hover .fab-menu-label {
+  border-color: var(--accent);
+  background: var(--bg-card-hover);
+}
+
+.fab-menu-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  box-shadow: var(--shadow-md);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.fab-menu-item:hover .fab-menu-icon {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }

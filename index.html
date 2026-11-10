@@ -108,10 +108,6 @@
               </svg>
             </span>
           </button>
-          <div class="section-reorder-btns">
-            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
-            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
-          </div>
         </div>
       <div id="todayTasksContent" class="section-content">
         <!-- Creación integrada de Tarea de Hoy -->
@@ -166,10 +162,6 @@
               </svg>
             </span>
           </button>
-          <div class="section-reorder-btns">
-            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
-            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
-          </div>
         </div>
       <div id="weekTopicsContent" class="section-content">
         <!-- Creación integrada de Topic -->
@@ -210,10 +202,6 @@
               </svg>
             </span>
           </button>
-          <div class="section-reorder-btns">
-            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
-            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
-          </div>
         </div>
       <div id="weekTasksContent" class="section-content">
         <!-- Creación integrada de Tarea Semanal -->
@@ -268,10 +256,6 @@
               </svg>
             </span>
           </button>
-          <div class="section-reorder-btns">
-            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
-            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
-          </div>
         </div>
       <div id="weekNotesContent" class="section-content">
         <!-- Creación integrada de Nota -->
@@ -323,10 +307,6 @@
               </svg>
             </span>
           </button>
-          <div class="section-reorder-btns">
-            <button type="button" class="btn-section-nav btn-section-up" title="Subir sección">▲</button>
-            <button type="button" class="btn-section-nav btn-section-down" title="Bajar sección">▼</button>
-          </div>
         </div>
       <div id="weekDefsContent" class="section-content">
         <!-- Creación integrada de Definición / Enlace -->
@@ -366,6 +346,39 @@
       <span>Brackets v1.0 • Sistema Operativo de Productividad</span>
       <span>Local-First & Multi-Vault</span>
     </footer>
+  </div>
+
+  <!-- Floating Action Button (FAB) + Speed Dial -->
+  <div id="fabBackdrop" class="fab-backdrop" style="display: none;"></div>
+  <div id="fabContainer" class="fab-container">
+    <div id="fabMenu" class="fab-menu" style="display: none;" role="menu" aria-label="Crear nuevo elemento">
+      <button type="button" class="fab-menu-item" data-fab-action="today_task" role="menuitem">
+        <span class="fab-menu-label">Tarea de Hoy</span>
+        <span class="fab-menu-icon">📋</span>
+      </button>
+      <button type="button" class="fab-menu-item" data-fab-action="week_task" role="menuitem">
+        <span class="fab-menu-label">Tarea de Semana</span>
+        <span class="fab-menu-icon">⏳</span>
+      </button>
+      <button type="button" class="fab-menu-item" data-fab-action="topic" role="menuitem">
+        <span class="fab-menu-label">Topic</span>
+        <span class="fab-menu-icon">🎯</span>
+      </button>
+      <button type="button" class="fab-menu-item" data-fab-action="note" role="menuitem">
+        <span class="fab-menu-label">Nota</span>
+        <span class="fab-menu-icon">📝</span>
+      </button>
+      <button type="button" class="fab-menu-item" data-fab-action="definition" role="menuitem">
+        <span class="fab-menu-label">Definición / Enlace</span>
+        <span class="fab-menu-icon">🎫</span>
+      </button>
+    </div>
+    <button id="btnFabMain" class="fab-main-btn" type="button" aria-label="Crear elemento" aria-expanded="false" title="Crear nuevo elemento (+)">
+      <svg class="fab-plus-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    </button>
   </div>
 
   <!-- Toast Notifications Container -->

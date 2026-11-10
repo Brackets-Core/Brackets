@@ -91,7 +91,12 @@ const el = {
   pomoTimeDisplay: document.getElementById('pomoTimeDisplay'),
   pomoTaskSelect: document.getElementById('pomoTaskSelect'),
   btnPomoStartPause: document.getElementById('btnPomoStartPause'),
-  btnPomoReset: document.getElementById('btnPomoReset')
+  btnPomoReset: document.getElementById('btnPomoReset'),
+
+  fabContainer: document.getElementById('fabContainer'),
+  fabMenu: document.getElementById('fabMenu'),
+  fabBackdrop: document.getElementById('fabBackdrop'),
+  btnFabMain: document.getElementById('btnFabMain')
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +122,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closeLocationPopover();
     closeAllTopMenuDropdowns();
+    closeFabMenu();
     closeModal();
   }
 });
@@ -126,6 +132,7 @@ window.addEventListener('resize', closeLocationPopover);
 document.addEventListener('DOMContentLoaded', async () => {
   setupPwaInstall();
   setupEventListeners();
+  setupFabMenu();
   setupPomodoroWidget();
   updateSoundToggleButton();
   setupCollapsibleSections();
@@ -192,33 +199,11 @@ function setupSectionReordering() {
   const container = document.getElementById('sectionsContainer');
   if (!container) return;
 
+  let touchDraggedSec = null;
+  let touchTargetSec = null;
+
   const sections = container.querySelectorAll(':scope > .collapsible-section');
   sections.forEach((sec) => {
-    const btnUp = sec.querySelector('.btn-section-up');
-    const btnDown = sec.querySelector('.btn-section-down');
-
-    if (btnUp) {
-      btnUp.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const prev = sec.previousElementSibling;
-        if (prev && prev.classList.contains('collapsible-section')) {
-          sec.parentNode.insertBefore(sec, prev);
-          saveSectionsOrder();
-        }
-      });
-    }
-
-    if (btnDown) {
-      btnDown.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const next = sec.nextElementSibling;
-        if (next && next.classList.contains('collapsible-section')) {
-          sec.parentNode.insertBefore(next, sec);
-          saveSectionsOrder();
-        }
-      });
-    }
-
     const handle = sec.querySelector('.section-drag-handle');
     if (handle) {
       handle.addEventListener('dragstart', (e) => {
@@ -231,6 +216,47 @@ function setupSectionReordering() {
         sec.classList.remove('dragging-section');
         container.querySelectorAll('.drag-over-section').forEach(s => s.classList.remove('drag-over-section'));
         saveSectionsOrder();
+      });
+
+      // Touch drag support on 6 dots for mobile
+      handle.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        touchDraggedSec = sec;
+        sec.classList.add('dragging-section');
+      }, { passive: true });
+
+      handle.addEventListener('touchmove', (e) => {
+        if (!touchDraggedSec || touchDraggedSec !== sec) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+        const overSec = elem ? elem.closest('.collapsible-section') : null;
+        container.querySelectorAll('.drag-over-section').forEach(s => s.classList.remove('drag-over-section'));
+        if (overSec && overSec !== touchDraggedSec && overSec.parentNode === container) {
+          overSec.classList.add('drag-over-section');
+          touchTargetSec = overSec;
+        } else {
+          touchTargetSec = null;
+        }
+      }, { passive: false });
+
+      handle.addEventListener('touchend', () => {
+        if (!touchDraggedSec) return;
+        touchDraggedSec.classList.remove('dragging-section');
+        container.querySelectorAll('.drag-over-section').forEach(s => s.classList.remove('drag-over-section'));
+        if (touchTargetSec && touchTargetSec !== touchDraggedSec) {
+          const allSecs = Array.from(container.children);
+          const dragIdx = allSecs.indexOf(touchDraggedSec);
+          const targetIdx = allSecs.indexOf(touchTargetSec);
+          if (dragIdx < targetIdx) {
+            touchTargetSec.after(touchDraggedSec);
+          } else {
+            touchTargetSec.before(touchDraggedSec);
+          }
+          saveSectionsOrder();
+        }
+        touchDraggedSec = null;
+        touchTargetSec = null;
       });
     }
 
@@ -293,34 +319,19 @@ async function saveItemsOrder(reorderType, container, dayNumber = null) {
   }
 }
 
-function bindItemNavButtons(card, container, reorderType, dayNumber = null) {
-  const btnUp = card.querySelector('.btn-item-up');
-  const btnDown = card.querySelector('.btn-item-down');
-  if (btnUp) {
-    btnUp.onclick = async (e) => {
-      e.stopPropagation();
-      const prev = card.previousElementSibling;
-      if (prev && prev.hasAttribute('data-id')) {
-        card.parentNode.insertBefore(card, prev);
-        await saveItemsOrder(reorderType, container, dayNumber);
-      }
-    };
-  }
-  if (btnDown) {
-    btnDown.onclick = async (e) => {
-      e.stopPropagation();
-      const next = card.nextElementSibling;
-      if (next && next.hasAttribute('data-id')) {
-        card.parentNode.insertBefore(next, card);
-        await saveItemsOrder(reorderType, container, dayNumber);
-      }
-    };
-  }
-}
-
 let currentDraggedItem = null;
 
 function setupDragAndDropForContainer(container, reorderType, dayNumber = null) {
+  if (!container) return;
+  container._dndReorderType = reorderType;
+  container._dndDayNumber = dayNumber;
+  if (container._dndBound) return;
+  container._dndBound = true;
+
+  let touchDraggedItem = null;
+  let touchTargetCard = null;
+  let touchIsAbove = true;
+
   container.addEventListener('dragstart', (e) => {
     const handle = e.target.closest('.drag-handle-item');
     if (!handle) return;
@@ -379,7 +390,7 @@ function setupDragAndDropForContainer(container, reorderType, dayNumber = null) 
       } else {
         container.insertBefore(currentDraggedItem, targetCard.nextSibling);
       }
-      await saveItemsOrder(reorderType, container, dayNumber);
+      await saveItemsOrder(container._dndReorderType, container, container._dndDayNumber);
     }
   });
 
@@ -391,6 +402,57 @@ function setupDragAndDropForContainer(container, reorderType, dayNumber = null) 
     container.querySelectorAll('.item-drop-above, .item-drop-below').forEach((el) => {
       el.classList.remove('item-drop-above', 'item-drop-below');
     });
+  });
+
+  // Touch drag support for 6 dots (.drag-handle-item) on mobile
+  container.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const handle = e.target.closest('.drag-handle-item');
+    if (!handle) return;
+    const card = handle.closest('[data-id]');
+    if (!card || card.parentNode !== container) return;
+    touchDraggedItem = card;
+    card.classList.add('item-dragging');
+  }, { passive: true });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!touchDraggedItem) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+    const targetCard = elem ? elem.closest('[data-id]') : null;
+    container.querySelectorAll('.item-drop-above, .item-drop-below').forEach((el) => {
+      el.classList.remove('item-drop-above', 'item-drop-below');
+    });
+    if (targetCard && targetCard !== touchDraggedItem && targetCard.parentNode === container) {
+      const rect = targetCard.getBoundingClientRect();
+      touchIsAbove = touch.clientY < rect.top + rect.height / 2;
+      touchTargetCard = targetCard;
+      targetCard.classList.add(touchIsAbove ? 'item-drop-above' : 'item-drop-below');
+    } else {
+      touchTargetCard = null;
+    }
+  }, { passive: false });
+
+  container.addEventListener('touchend', async () => {
+    if (!touchDraggedItem) return;
+    const movedCard = touchDraggedItem;
+    const target = touchTargetCard;
+    const isAbove = touchIsAbove;
+    touchDraggedItem = null;
+    touchTargetCard = null;
+    movedCard.classList.remove('item-dragging');
+    container.querySelectorAll('.item-drop-above, .item-drop-below').forEach((el) => {
+      el.classList.remove('item-drop-above', 'item-drop-below');
+    });
+    if (target && target !== movedCard && target.parentNode === container) {
+      if (isAbove) {
+        container.insertBefore(movedCard, target);
+      } else {
+        container.insertBefore(movedCard, target.nextSibling);
+      }
+      await saveItemsOrder(container._dndReorderType, container, container._dndDayNumber);
+    }
   });
 }
 
@@ -1744,15 +1806,10 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
             ${projSpan}
           </div>
           ${moveTodayBtn}
-          <div class="item-reorder-btns">
-            <button class="btn-item-nav btn-item-up" type="button" title="Subir">▲</button>
-            <button class="btn-item-nav btn-item-down" type="button" title="Bajar">▼</button>
-          </div>
+
         </div>
         ${descHtml}
       `;
-
-      bindItemNavButtons(card, container, reorderType, dayNumber);
 
       const btnMoveToday = card.querySelector('.btn-move-today');
       if (btnMoveToday) {
@@ -1969,18 +2026,13 @@ function renderNotesList(notes) {
             <span>📌 ${escapeHtml(note.title || 'Nota')}</span>
             ${note.project_id ? `<span class="task-project-tag">${escapeHtml(note.project_id)}</span>` : ''}
           </div>
-          <div class="item-reorder-btns">
-            <button class="btn-item-nav btn-item-up" type="button" title="Subir">▲</button>
-            <button class="btn-item-nav btn-item-down" type="button" title="Bajar">▼</button>
-          </div>
+
         </div>
         ${bulletsHtml ? `<ul>${bulletsHtml}</ul>` : ''}
       `;
 
-      bindItemNavButtons(card, el.notesContainer, 'notes', null);
-
       card.onclick = (e) => {
-        if (e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item') || e.target.closest('.item-reorder-btns')) return;
+        if (e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item')) return;
         renderEditView();
       };
     }
@@ -2155,17 +2207,12 @@ function renderDefinitionsList(definitions) {
           </div>
           ${titleHtml}
           ${linkHtml}
-          <div class="item-reorder-btns">
-            <button class="btn-item-nav btn-item-up" type="button" title="Subir">▲</button>
-            <button class="btn-item-nav btn-item-down" type="button" title="Bajar">▼</button>
-          </div>
+
         </div>
       `;
 
-      bindItemNavButtons(card, el.definitionsContainer, 'definitions', null);
-
       card.onclick = (e) => {
-        if (e.target.closest('.def-url-link') || e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item') || e.target.closest('.item-reorder-btns')) return;
+        if (e.target.closest('.def-url-link') || e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item')) return;
         renderEditView();
       };
     }
@@ -2309,17 +2356,12 @@ function renderTopicsList(topics) {
           <span>🎯</span>
           <span class="topic-title">${escapeHtml(topic.title)}</span>
           ${projTag}
-          <div class="item-reorder-btns">
-            <button class="btn-item-nav btn-item-up" type="button" title="Subir">▲</button>
-            <button class="btn-item-nav btn-item-down" type="button" title="Bajar">▼</button>
-          </div>
+
         </div>
       `;
 
-      bindItemNavButtons(card, el.topicsContainer, 'topics', null);
-
       card.onclick = (e) => {
-        if (e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item') || e.target.closest('.item-reorder-btns')) return;
+        if (e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item')) return;
         renderEditView();
       };
     }
@@ -4019,3 +4061,394 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Floating Action Button (FAB) + Speed Dial Menu
+// ---------------------------------------------------------------------------
+function closeFabMenu() {
+  if (el.fabContainer) el.fabContainer.classList.remove('open');
+  if (el.fabMenu) el.fabMenu.style.display = 'none';
+  if (el.fabBackdrop) el.fabBackdrop.style.display = 'none';
+  if (el.btnFabMain) el.btnFabMain.setAttribute('aria-expanded', 'false');
+}
+
+function setupFabMenu() {
+  if (!el.btnFabMain || !el.fabMenu) return;
+
+  el.btnFabMain.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = el.fabContainer && el.fabContainer.classList.contains('open');
+    if (isOpen) {
+      closeFabMenu();
+    } else {
+      if (el.fabContainer) el.fabContainer.classList.add('open');
+      el.fabMenu.style.display = 'flex';
+      if (el.fabBackdrop) el.fabBackdrop.style.display = 'block';
+      el.btnFabMain.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  if (el.fabBackdrop) {
+    el.fabBackdrop.addEventListener('click', closeFabMenu);
+  }
+
+  el.fabMenu.querySelectorAll('.fab-menu-item').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.fabAction;
+      closeFabMenu();
+      openFabQuickCreateModal(action);
+    });
+  });
+}
+
+function openFabQuickCreateModal(actionType) {
+  if (actionType === 'today_task' || actionType === 'week_task') {
+    const isWeek = actionType === 'week_task';
+    const days = (state.hubData && state.hubData.days) ? state.hubData.days : [];
+    const defaultDay = state.activeDayNumber || (state.hubData && state.hubData.active_day ? state.hubData.active_day.day_number : null);
+
+    let targetOpts = `<option value="week" ${isWeek ? 'selected' : ''}>⏳ Tarea de Semana (Sin día fijo)</option>`;
+    days.forEach((d) => {
+      const isSel = !isWeek && (d.day_number === defaultDay);
+      targetOpts += `<option value="day:${d.day_number}" ${isSel ? 'selected' : ''}>${d.location_emoji || '📅'} Día ${d.day_number} (${d.weekday_name || ''})</option>`;
+    });
+
+    openModal(isWeek ? '⏳ Nueva Tarea de la Semana' : '📋 Nueva Tarea de Hoy', `
+      <div class="edit-form-box">
+        <input id="fabTaskTitle" class="edit-input" type="text" placeholder="Título... (ej: Reunión: Sync #[PROYECTO] o escribe [ )" autocomplete="off">
+        <textarea id="fabTaskDesc" class="edit-textarea" rows="3" placeholder="Descripción o sub-viñetas (opcional)... (Ctrl+Enter para guardar)"></textarea>
+        <div class="edit-actions-row">
+          <div class="edit-actions-left">
+            <select id="fabTaskTarget" class="edit-select">${targetOpts}</select>
+            <button id="fabTaskStatusBtn" type="button" class="btn-status-pill">Pendiente [ ]</button>
+          </div>
+          <div class="edit-actions-right">
+            <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
+            <button id="btnFabSaveTask" class="btn-edit-save" type="button">Crear Tarea ✓</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const titleInput = document.getElementById('fabTaskTitle');
+    const descInput = document.getElementById('fabTaskDesc');
+    const targetSelect = document.getElementById('fabTaskTarget');
+    const statusBtn = document.getElementById('fabTaskStatusBtn');
+    const btnSave = document.getElementById('btnFabSaveTask');
+    const btnCancel = document.getElementById('btnFabCancel');
+
+    let isDone = false;
+    statusBtn.addEventListener('click', () => {
+      isDone = !isDone;
+      statusBtn.textContent = isDone ? '✓ Hecha [x]' : 'Pendiente [ ]';
+      statusBtn.classList.toggle('done', isDone);
+    });
+
+    attachDefinitionAutocomplete(titleInput);
+    attachDefinitionAutocomplete(descInput);
+    setTimeout(() => titleInput.focus(), 30);
+
+    async function submitFabTask() {
+      const title = titleInput.value.trim();
+      if (!title) {
+        titleInput.focus();
+        return;
+      }
+      btnSave.disabled = true;
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vault: state.currentVault,
+            title,
+            description: descInput.value.trim() || null,
+            target: targetSelect.value,
+            is_done: isDone,
+            year: state.activeYear,
+            week: state.activeWeekNumber
+          })
+        });
+        if (res.ok) {
+          closeModal();
+          await loadHub();
+          showToast('Tarea creada correctamente', 'success');
+        }
+      } catch (err) {
+        showToast('Error al crear la tarea', 'error');
+      } finally {
+        btnSave.disabled = false;
+      }
+    }
+
+    btnSave.addEventListener('click', submitFabTask);
+    btnCancel.addEventListener('click', closeModal);
+    titleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitFabTask();
+      }
+    });
+    descInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        submitFabTask();
+      }
+    });
+    return;
+  }
+
+  if (actionType === 'topic') {
+    openModal('🎯 Nuevo Topic de la Semana', `
+      <div class="edit-form-box">
+        <input id="fabTopicTitle" class="edit-input" type="text" placeholder="Título del topic... (ej: Refactorización Motor #[Core])" autocomplete="off">
+        <div class="edit-actions-row">
+          <div class="edit-actions-left"></div>
+          <div class="edit-actions-right">
+            <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
+            <button id="btnFabSaveTopic" class="btn-edit-save" type="button">Crear Topic ✓</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const titleInput = document.getElementById('fabTopicTitle');
+    const btnSave = document.getElementById('btnFabSaveTopic');
+    const btnCancel = document.getElementById('btnFabCancel');
+
+    attachDefinitionAutocomplete(titleInput);
+    setTimeout(() => titleInput.focus(), 30);
+
+    async function submitFabTopic() {
+      const title = titleInput.value.trim();
+      if (!title) {
+        titleInput.focus();
+        return;
+      }
+      btnSave.disabled = true;
+      try {
+        const res = await fetch('/api/topics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vault: state.currentVault,
+            title,
+            year: state.activeYear,
+            week: state.activeWeekNumber
+          })
+        });
+        if (res.ok) {
+          closeModal();
+          await loadHub();
+          showToast('Topic creado', 'success');
+        }
+      } catch (err) {
+        showToast('Error al crear el topic', 'error');
+      } finally {
+        btnSave.disabled = false;
+      }
+    }
+
+    btnSave.addEventListener('click', submitFabTopic);
+    btnCancel.addEventListener('click', closeModal);
+    titleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitFabTopic();
+      }
+    });
+    return;
+  }
+
+  if (actionType === 'note') {
+    openModal('📝 Nueva Nota de la Semana', `
+      <div class="edit-form-box">
+        <input id="fabNoteTitle" class="edit-input" type="text" placeholder="Título de la nota... (ej: Acuerdos Sprint #[Proyecto])" autocomplete="off">
+        <textarea id="fabNoteContent" class="edit-textarea" rows="4" placeholder="Contenido / viñetas (una por línea)... (Ctrl+Enter para guardar)"></textarea>
+        <div class="edit-actions-row">
+          <div class="edit-actions-left"></div>
+          <div class="edit-actions-right">
+            <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
+            <button id="btnFabSaveNote" class="btn-edit-save" type="button">Guardar Nota ✓</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const titleInput = document.getElementById('fabNoteTitle');
+    const contentInput = document.getElementById('fabNoteContent');
+    const btnSave = document.getElementById('btnFabSaveNote');
+    const btnCancel = document.getElementById('btnFabCancel');
+
+    attachDefinitionAutocomplete(titleInput);
+    attachDefinitionAutocomplete(contentInput);
+    setTimeout(() => titleInput.focus(), 30);
+
+    async function submitFabNote() {
+      const title = titleInput.value.trim() || 'Nota';
+      const raw = contentInput.value.trim();
+      const bullets = raw ? raw.split('\n').map(l => l.trim()).filter(l => l.length > 0) : [];
+      if (!titleInput.value.trim() && bullets.length === 0) {
+        titleInput.focus();
+        return;
+      }
+      btnSave.disabled = true;
+      try {
+        const res = await fetch('/api/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vault: state.currentVault,
+            title,
+            content: bullets,
+            year: state.activeYear,
+            week: state.activeWeekNumber
+          })
+        });
+        if (res.ok) {
+          closeModal();
+          await loadHub();
+          showToast('Nota guardada', 'success');
+        }
+      } catch (err) {
+        showToast('Error al crear la nota', 'error');
+      } finally {
+        btnSave.disabled = false;
+      }
+    }
+
+    btnSave.addEventListener('click', submitFabNote);
+    btnCancel.addEventListener('click', closeModal);
+    titleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        contentInput.focus();
+      }
+    });
+    contentInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        submitFabNote();
+      }
+    });
+    return;
+  }
+
+  if (actionType === 'definition') {
+    openModal('🎫 Nueva Definición o Enlace', `
+      <div class="edit-form-box">
+        <input id="fabDefUrl" class="edit-input" type="text" placeholder="Pega aquí la URL de Jira o enlace (opcional)..." autocomplete="off">
+        <input id="fabDefCode" class="edit-input" type="text" placeholder="Código o Ticket... (ej: [🎫ATLM-14036] o 📂DOCS)" autocomplete="off">
+        <div class="edit-actions-row">
+          <div class="edit-actions-left"></div>
+          <div class="edit-actions-right">
+            <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
+            <button id="btnFabSaveDef" class="btn-edit-save" type="button">Guardar Enlace ✓</button>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const urlInput = document.getElementById('fabDefUrl');
+    const codeInput = document.getElementById('fabDefCode');
+    const btnSave = document.getElementById('btnFabSaveDef');
+    const btnCancel = document.getElementById('btnFabCancel');
+
+    setTimeout(() => urlInput.focus(), 30);
+
+    const handleUrlDetect = () => {
+      const urlVal = urlInput.value.trim();
+      const ticket = extractJiraTicketFromUrl(urlVal);
+      if (ticket) {
+        const curCode = codeInput.value.trim();
+        if (!curCode || curCode.startsWith('[🎫') || !curCode.includes('[')) {
+          codeInput.value = `[🎫${ticket}]`;
+        }
+      }
+    };
+    urlInput.addEventListener('input', handleUrlDetect);
+    urlInput.addEventListener('paste', () => setTimeout(handleUrlDetect, 50));
+
+    const handleCodeDetect = () => {
+      const codeVal = codeInput.value.trim();
+      if (codeVal.startsWith('http://') || codeVal.startsWith('https://')) {
+        const ticket = extractJiraTicketFromUrl(codeVal);
+        if (ticket) {
+          codeInput.value = `[🎫${ticket}]`;
+          if (!urlInput.value.trim()) urlInput.value = codeVal;
+        }
+      }
+    };
+    codeInput.addEventListener('input', handleCodeDetect);
+    codeInput.addEventListener('paste', () => setTimeout(handleCodeDetect, 50));
+
+    async function submitFabDef() {
+      let code = codeInput.value.trim();
+      let url = urlInput.value.trim();
+
+      if (!code && url) {
+        const ticketFromUrl = extractJiraTicketFromUrl(url);
+        if (ticketFromUrl) code = `[🎫${ticketFromUrl}]`;
+      }
+      if (code.startsWith('http://') || code.startsWith('https://')) {
+        const ticketInCode = extractJiraTicketFromUrl(code);
+        if (ticketInCode) {
+          if (!url) url = code;
+          code = `[🎫${ticketInCode}]`;
+        }
+      }
+
+      if (!code) {
+        codeInput.focus();
+        return;
+      }
+
+      const cleanTicket = code.replace(/[\[\]🎫]/g, '').trim();
+      if (/^[A-Za-z][A-Za-z0-9_]*-\d+$/i.test(cleanTicket)) {
+        code = `[🎫${cleanTicket.toUpperCase()}]`;
+      } else if (!code.startsWith('[')) {
+        code = `[${code}]`;
+      }
+
+      btnSave.disabled = true;
+      try {
+        const res = await fetch('/api/definitions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vault: state.currentVault,
+            code,
+            url: url || null,
+            year: state.activeYear,
+            week: state.activeWeekNumber
+          })
+        });
+        if (res.ok) {
+          closeModal();
+          await loadHub();
+          showToast(`Enlace ${code} guardado`, 'success');
+        }
+      } catch (err) {
+        showToast('Error al guardar definición', 'error');
+      } finally {
+        btnSave.disabled = false;
+      }
+    }
+
+    btnSave.addEventListener('click', submitFabDef);
+    btnCancel.addEventListener('click', closeModal);
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitFabDef();
+      }
+    });
+    codeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitFabDef();
+      }
+    });
+  }
+}
