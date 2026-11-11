@@ -235,17 +235,31 @@ class BracketsWebService:
         mgr = self.get_entity_manager(vault_path)
 
         now = datetime.now()
+        iso_year, iso_week, _ = now.isocalendar()
         week = self._get_or_create_week(vault_path, mgr, year=year, week_number=week_number)
 
         # Sincronizar cambios manuales desde el .md
         self._sync_week_from_markdown_if_exists(vault_path, week, mgr)
 
-        # Arrastre automático día a día de tareas pendientes previas (igual que el CLI)
-        today_day = next((d for d in week.days if d.day_number == now.day), None)
-        if today_day:
-            rolled = mgr.rollover_day_tasks(week, today_day.day_number)
-            if rolled > 0:
+        # Paridad completa con DailyHubController.run(): calendario, recurrentes y arrastre día a día en la semana actual
+        is_current_week = (week.year == iso_year and week.week_number == iso_week) or (year is None and week_number is None)
+        today_day = next((d for d in week.days if d.day_number == now.day), None) if is_current_week else None
+        if is_current_week:
+            changed_week = False
+            try:
+                from brackets.managers.settings_manager import SettingsManager
+                if mgr.apply_calendar_to_week(week, SettingsManager(vault_path)):
+                    changed_week = True
+            except Exception:
+                pass
+            if mgr.apply_recurring_tasks(week) > 0:
+                changed_week = True
+            if today_day:
+                rolled = mgr.rollover_day_tasks(week, today_day.day_number)
+                if rolled > 0:
+                    changed_week = True
                 mgr.sort_day_tasks_pending_first(today_day)
+            if changed_week:
                 mgr.save_week(week)
                 self._render_and_save_week_md(vault_path, week, mgr)
 

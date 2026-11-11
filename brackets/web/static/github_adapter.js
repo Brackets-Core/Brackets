@@ -38,9 +38,12 @@
     },
     {
       id: 'sync_recurring',
-      label: '🔄 Sincronización',
+      label: '🔄 Sync y Recurrentes',
       items: [
-        { id: 'sync_current_week', label: '🔄 Refrescar Semana desde GitHub', command: 'sync_current_week' }
+        { id: 'sync_current_week', label: '🔄 Refrescar Semana desde GitHub', command: 'sync_current_week' },
+        { id: 'apply_recurring', label: '⚡ Inyectar Tareas Recurrentes en esta Semana', command: 'apply_recurring' },
+        { id: 'manage_recurring', label: '🔁 Gestionar Tareas Recurrentes y Reuniones', command: 'manage_recurring' },
+        { id: 'apply_calendar', label: '📆 Reaplicar Calendario Laboral a esta Semana', command: 'apply_calendar' }
       ]
     },
     {
@@ -57,6 +60,7 @@
       label: '🛠️ Herramientas y GitHub',
       items: [
         { id: 'pomodoro_focus', label: '🍅 Temporizador Pomodoro (Modo Focus)', command: 'pomodoro_focus' },
+        { id: 'work_calendar', label: '🏖️ Calendario Laboral (Festivos / Vacaciones)', command: 'work_calendar' },
         { id: 'github_settings', label: '☁️ Configurar GitHub API / Vaults Remotos', command: 'github_settings' }
       ]
     }
@@ -493,6 +497,69 @@
     task.is_done = task.status === 'done';
     task.is_cancelled = task.status === 'cancelled';
     return task;
+  }
+
+  function isInterventionDay(day) {
+    if (!day) return false;
+    if (day.location_emoji === '🛠️') return true;
+    const note = (day.location_note || '').toLowerCase();
+    return note.includes('intervención') || note.includes('intervencion') || note.includes('guardia');
+  }
+
+  function sortTasksPendingFirst(tasksArray) {
+    if (!Array.isArray(tasksArray)) return;
+    const rank = (t) => {
+      if (!t) return 3;
+      if (t.status === 'pending' && !t.is_done && !t.is_cancelled) return 0;
+      if (t.status === 'done' || t.is_done) return 1;
+      if (t.status === 'cancelled' || t.is_cancelled) return 2;
+      return 3;
+    };
+    tasksArray.sort((a, b) => rank(a) - rank(b));
+  }
+
+  function rolloverDayTasksInWeekState(weekState, currentDayNumber, recurringTitlesSet = new Set()) {
+    if (!weekState || !Array.isArray(weekState.days)) return 0;
+    const currIdx = weekState.days.findIndex((d) => d.day_number === currentDayNumber);
+    if (currIdx <= 0) return 0;
+
+    const currentDay = weekState.days[currIdx];
+    if (isInterventionDay(currentDay)) return 0;
+
+    let rolledCount = 0;
+    for (let i = 0; i < currIdx; i++) {
+      const prevDay = weekState.days[i];
+      if (isInterventionDay(prevDay) || !Array.isArray(prevDay.tasks)) continue;
+
+      const remaining = [];
+      for (const task of prevDay.tasks) {
+        const isPending = task.status === 'pending' && !task.is_done && !task.is_cancelled;
+        const isMeeting = task.task_type === 'meeting';
+        const isRecurring = Boolean(task.recurring_id) || recurringTitlesSet.has((task.title || '').trim().toLowerCase());
+
+        if (isPending && !isMeeting && !isRecurring) {
+          task.day_number = currentDay.day_number;
+          task.is_week_task = false;
+          const dup = currentDay.tasks.some(
+            (existing) => existing.title.trim().toLowerCase() === task.title.trim().toLowerCase() && (existing.project_id || null) === (task.project_id || null)
+          );
+          if (!dup) {
+            currentDay.tasks.push(task);
+          }
+          rolledCount++;
+        } else {
+          remaining.push(task);
+        }
+      }
+      prevDay.tasks = remaining;
+      prevDay.task_count = prevDay.tasks.length;
+    }
+
+    if (rolledCount > 0) {
+      sortTasksPendingFirst(currentDay.tasks);
+      currentDay.task_count = currentDay.tasks.length;
+    }
+    return rolledCount;
   }
 
 
@@ -1547,7 +1614,37 @@
 
     async getHubData(vault, { dayNumber = null, year = null, weekNumber = null } = {}) {
       const weekState = await this.loadOrCreateWeek(vault, year, weekNumber);
-      const todayDate = new Date().getDate();
+      const now = new Date();
+      const nowIso = getIsoWeekInfo(now);
+      const todayDate = now.getDate();
+
+      // Arrastre automático día a día de tareas pendientes previas (paridad con Brackets CLI)
+      const isCurrentWeek =
+        (weekState.year === nowIso.year && weekState.week_number === nowIso.week_number) ||
+        (year === null && weekNumber === null);
+
+      if (isCurrentWeek && weekState.days.some((d) => d.day_number === todayDate)) {
+        const recTitles = new Set();
+        try {
+          const recList = await this.getRecurringTasks(vault);
+          recList.forEach((r) => {
+            if (r.active && r.title) recTitles.add(r.title.trim().toLowerCase());
+          });
+        } catch (_) {}
+
+        const rolled = rolloverDayTasksInWeekState(weekState, todayDate, recTitles);
+        if (rolled > 0) {
+          try {
+            await this.saveWeekState(
+              vault,
+              weekState,
+              `chore(rollover): move ${rolled} pending task(s) to day ${todayDate}`
+            );
+          } catch (err) {
+            console.warn('No se pudo persistir rollover diario en GitHub:', err);
+          }
+        }
+      }
 
       let activeDay = null;
       if (dayNumber !== null && !Number.isNaN(Number(dayNumber))) {
@@ -1722,8 +1819,12 @@
             (targetDayNum !== null && weekState.days.find((d) => d.day_number === Number(targetDayNum))) ||
             weekState.days.find((d) => d.day_number === new Date().getDate()) ||
             weekState.days[0];
-          if (targetDay) targetDay.tasks.push(newTask);
-          else weekState.week_tasks.push(newTask);
+          if (targetDay) {
+            targetDay.tasks.push(newTask);
+            sortTasksPendingFirst(targetDay.tasks);
+          } else {
+            weekState.week_tasks.push(newTask);
+          }
         }
 
         await this.saveWeekState(vault, weekState, `feat(task): add "${clean_title}"`);
@@ -1744,7 +1845,7 @@
         if (found.day === null && found.task.status === 'done') {
           found.list.splice(found.index, 1);
           found.task.is_week_task = false;
-          const todayDate = new Date().getUTCDate();
+          const todayDate = new Date().getDate();
           let targetDay = weekState.days.find((d) => d.day_number === todayDate);
           if (!targetDay && weekState.days.length > 0) {
             targetDay = weekState.days[0];
@@ -1752,9 +1853,12 @@
           if (targetDay) {
             found.task.day_number = targetDay.day_number;
             targetDay.tasks.push(found.task);
+            sortTasksPendingFirst(targetDay.tasks);
           } else {
             weekState.week_tasks.push(found.task);
           }
+        } else if (found.day) {
+          sortTasksPendingFirst(found.day.tasks);
         }
 
         await this.saveWeekState(vault, weekState, `chore(task): toggle "${found.task.title}" -> ${found.task.status}`);
@@ -1788,6 +1892,7 @@
           if (bodyObj.status !== undefined) {
             found.task.status = bodyObj.status;
             syncTaskFlags(found.task);
+            if (found.day) sortTasksPendingFirst(found.day.tasks);
           }
           if (bodyObj.description !== undefined) found.task.description = (bodyObj.description || '').trim() || null;
 
@@ -1800,11 +1905,12 @@
               weekState.week_tasks.push(found.task);
             } else if (target === 'today') {
               found.task.is_week_task = false;
-              const todayDate = new Date().getUTCDate();
+              const todayDate = new Date().getDate();
               let destDay = weekState.days.find((d) => d.day_number === todayDate) || weekState.days[0];
               if (destDay) {
                 found.task.day_number = destDay.day_number;
                 destDay.tasks.push(found.task);
+                sortTasksPendingFirst(destDay.tasks);
               } else {
                 weekState.week_tasks.push(found.task);
               }
@@ -1815,6 +1921,7 @@
                 found.task.is_week_task = false;
                 found.task.day_number = dNum;
                 destDay.tasks.push(found.task);
+                sortTasksPendingFirst(destDay.tasks);
               } else {
                 weekState.week_tasks.push(found.task);
               }
@@ -2014,16 +2121,25 @@
         const calConfig = await this.getWorkCalendar(vault);
         const nextState = BitacoraMarkdownCodec.createEmptyWeekState(nextYear, nextWeekNum, vault, calConfig);
         let injectedRecCount = 0;
+        const recTitles = new Set();
         try {
           const recList = await this.getRecurringTasks(vault);
           for (const r of recList) {
-            if (r.active) injectedRecCount += this.injectRecurringTaskIntoWeekState(nextState, r);
+            if (r.active) {
+              if (r.title) recTitles.add(r.title.trim().toLowerCase());
+              injectedRecCount += this.injectRecurringTaskIntoWeekState(nextState, r);
+            }
           }
         } catch (_) {}
         nextState.topics = [...weekState.topics];
+        const isRollable = (t) =>
+          t.status === 'pending' &&
+          t.task_type !== 'meeting' &&
+          !t.recurring_id &&
+          !recTitles.has((t.title || '').trim().toLowerCase());
         const pendingTasks = [
-          ...weekState.week_tasks.filter((t) => t.status === 'pending'),
-          ...weekState.days.flatMap((d) => d.tasks.filter((t) => t.status === 'pending'))
+          ...weekState.week_tasks.filter(isRollable),
+          ...weekState.days.flatMap((d) => d.tasks.filter(isRollable))
         ];
         nextState.week_tasks = pendingTasks;
         const nextFile = formatWeekFilename(nextYear, nextState.month, nextWeekNum);
