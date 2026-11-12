@@ -113,6 +113,12 @@ body {
   width: 34px;
   height: 34px;
   border-radius: var(--radius-md);
+  backdrop-filter: blur(7px) saturate(180%);
+  -webkit-backdrop-filter: blur(7px) saturate(180%);
+  box-shadow:
+    0 3px 10px rgba(37, 99, 235, 0.28),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.45),
+    inset 0 0 8px rgba(59, 130, 246, 0.25);
 }
 
 .brand-title {
@@ -241,8 +247,14 @@ body {
 }
 
 .day-chip.active {
-  background-color: var(--accent-soft);
-  border-color: var(--accent);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.20) 0%, rgba(59, 130, 246, 0.11) 55%, rgba(37, 99, 235, 0.22) 100%);
+  backdrop-filter: blur(7px) saturate(185%);
+  -webkit-backdrop-filter: blur(7px) saturate(185%);
+  border-color: rgba(147, 197, 253, 0.52);
+  box-shadow:
+    0 4px 14px rgba(37, 99, 235, 0.26),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.48),
+    inset 0 0 10px rgba(59, 130, 246, 0.26);
 }
 
 .day-chip.active .day-weekday-letter,
@@ -2275,6 +2287,12 @@ body {
 .drawer-logo {
   width: 22px;
   height: 22px;
+  border-radius: 6px;
+  backdrop-filter: blur(6px) saturate(180%);
+  -webkit-backdrop-filter: blur(6px) saturate(180%);
+  box-shadow:
+    0 2px 8px rgba(37, 99, 235, 0.26),
+    inset 0 1px 1px rgba(255, 255, 255, 0.42);
 }
 
 .btn-drawer-close {
@@ -2347,32 +2365,41 @@ body {
   color: var(--accent);
 }
 
-/* Flecha de semana en modo 'Crear Nueva Semana' (azul brillante con brillo / pulso) */
+/* Flecha de semana en modo 'Crear Nueva Semana' (cristal zafiro traslúcido con pulso) */
 .btn-week-arrow.is-create-next {
-  background: #2563eb !important;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.24) 0%, rgba(59, 130, 246, 0.14) 55%, rgba(37, 99, 235, 0.26) 100%) !important;
+  backdrop-filter: blur(7px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(7px) saturate(185%) !important;
   color: #ffffff !important;
-  border-color: #3b82f6 !important;
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.65), 0 0 4px rgba(255, 255, 255, 0.5) inset !important;
+  border: 1px solid rgba(147, 197, 253, 0.54) !important;
+  box-shadow:
+    0 3px 12px rgba(37, 99, 235, 0.34),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.56),
+    inset 0 0 8px rgba(59, 130, 246, 0.32) !important;
   opacity: 1 !important;
   cursor: pointer !important;
-  animation: pulse-glow-blue 2s infinite ease-in-out;
+  animation: pulse-glow-blue 2.2s infinite ease-in-out;
 }
 
 .btn-week-arrow.is-create-next:hover {
-  background: #1d4ed8 !important;
-  box-shadow: 0 0 18px rgba(59, 130, 246, 0.95), 0 0 6px rgba(255, 255, 255, 0.7) inset !important;
-  transform: scale(1.12);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.36) 0%, rgba(59, 130, 246, 0.24) 55%, rgba(37, 99, 235, 0.38) 100%) !important;
+  border-color: rgba(191, 219, 254, 0.72) !important;
+  box-shadow:
+    0 4px 16px rgba(59, 130, 246, 0.52),
+    inset 0 1px 2px rgba(255, 255, 255, 0.72),
+    inset 0 0 10px rgba(59, 130, 246, 0.45) !important;
+  transform: scale(1.1);
 }
 
 @keyframes pulse-glow-blue {
   0% {
-    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5), 0 0 2px rgba(255, 255, 255, 0.4) inset;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.28), inset 0 1px 1.5px rgba(255, 255, 255, 0.48), inset 0 0 6px rgba(59, 130, 246, 0.26);
   }
   50% {
-    box-shadow: 0 0 16px rgba(59, 130, 246, 0.85), 0 0 6px rgba(255, 255, 255, 0.7) inset;
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.55), inset 0 1px 2px rgba(255, 255, 255, 0.7), inset 0 0 10px rgba(59, 130, 246, 0.45);
   }
   100% {
-    box-shadow: 0 0 8px rgba(59, 130, 246, 0.5), 0 0 2px rgba(255, 255, 255, 0.4) inset;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.28), inset 0 1px 1.5px rgba(255, 255, 255, 0.48), inset 0 0 6px rgba(59, 130, 246, 0.26);
   }
 }
 
@@ -2832,16 +2859,16 @@ body {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.32) 0%, rgba(59, 130, 246, 0.24) 55%, rgba(37, 99, 235, 0.34) 100%);
-  backdrop-filter: blur(10px) saturate(190%);
-  -webkit-backdrop-filter: blur(10px) saturate(190%);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.19) 0%, rgba(59, 130, 246, 0.11) 55%, rgba(37, 99, 235, 0.21) 100%);
+  backdrop-filter: blur(7px) saturate(185%);
+  -webkit-backdrop-filter: blur(7px) saturate(185%);
   color: #ffffff;
-  border: 1px solid rgba(147, 197, 253, 0.44);
+  border: 1px solid rgba(147, 197, 253, 0.48);
   box-shadow:
-    0 8px 22px rgba(37, 99, 235, 0.36),
-    0 2px 8px rgba(0, 0, 0, 0.26),
-    inset 0 1px 2px rgba(255, 255, 255, 0.58),
-    inset 0 0 12px rgba(59, 130, 246, 0.38);
+    0 8px 22px rgba(37, 99, 235, 0.30),
+    0 2px 8px rgba(0, 0, 0, 0.22),
+    inset 0 1px 2px rgba(255, 255, 255, 0.62),
+    inset 0 0 12px rgba(59, 130, 246, 0.30);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2850,14 +2877,14 @@ body {
 }
 
 .fab-main-btn:hover {
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.44) 0%, rgba(59, 130, 246, 0.34) 55%, rgba(37, 99, 235, 0.46) 100%);
-  border-color: rgba(191, 219, 254, 0.62);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.30) 0%, rgba(59, 130, 246, 0.20) 55%, rgba(37, 99, 235, 0.32) 100%);
+  border-color: rgba(191, 219, 254, 0.68);
   transform: scale(1.06);
   box-shadow:
-    0 10px 26px rgba(37, 99, 235, 0.48),
-    0 0 16px rgba(59, 130, 246, 0.42),
-    inset 0 1px 2px rgba(255, 255, 255, 0.7),
-    inset 0 0 14px rgba(59, 130, 246, 0.45);
+    0 10px 26px rgba(37, 99, 235, 0.42),
+    0 0 16px rgba(59, 130, 246, 0.36),
+    inset 0 1px 2px rgba(255, 255, 255, 0.72),
+    inset 0 0 14px rgba(59, 130, 246, 0.38);
 }
 
 .fab-main-btn:active {

@@ -1,12 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
   <defs>
+    <linearGradient id="crystalBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.26"/>
+      <stop offset="55%" stop-color="#3b82f6" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#1d4ed8" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="crystalRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#dbeafe" stop-opacity="0.72"/>
+      <stop offset="50%" stop-color="#93c5fd" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.52"/>
+    </linearGradient>
+    <linearGradient id="crystalSheen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.0"/>
+    </linearGradient>
     <linearGradient id="bracketsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6"/>
-      <stop offset="100%" stop-color="#1d4ed8"/>
+      <stop offset="0%" stop-color="#93c5fd"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
     </linearGradient>
   </defs>
-  <rect width="192" height="192" rx="42" fill="#181a1f"/>
-  <rect x="10" y="10" width="172" height="172" rx="34" fill="none" stroke="#2a2e39" stroke-width="3"/>
+  <!-- Base cristal zafiro traslúcido -->
+  <rect x="4" y="4" width="184" height="184" rx="42" fill="url(#crystalBg)" stroke="url(#crystalRim)" stroke-width="3.5"/>
+  <!-- Reflejo especular superior de cristal -->
+  <rect x="14" y="12" width="164" height="72" rx="32" fill="url(#crystalSheen)"/>
+  <!-- Bisel interior cristalino -->
+  <rect x="14" y="14" width="164" height="164" rx="34" fill="none" stroke="#93c5fd" stroke-opacity="0.22" stroke-width="2"/>
   <!-- Corchete Izquierdo [ -->
   <path d="M 64 54 L 46 54 L 46 138 L 64 138" fill="none" stroke="url(#bracketsGrad)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
   <!-- Corchete Derecho ] -->
