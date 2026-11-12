@@ -4157,6 +4157,29 @@ function setupFabMenu() {
       openFabQuickCreateModal(action);
     });
   });
+
+  document.querySelectorAll('.btn-section-quick-add').forEach((addBtn) => {
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const action = addBtn.dataset.quickAdd;
+      if (action) {
+        closeFabMenu();
+        openFabQuickCreateModal(action);
+      }
+    });
+    addBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.stopPropagation();
+        e.preventDefault();
+        const action = addBtn.dataset.quickAdd;
+        if (action) {
+          closeFabMenu();
+          openFabQuickCreateModal(action);
+        }
+      }
+    });
+  });
 }
 
 function openFabQuickCreateModal(actionType) {
