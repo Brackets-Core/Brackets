@@ -1,6 +1,6 @@
 // Service Worker de Brackets Web Hub
 // Cachea la carcasa (App Shell) para apertura instantánea en 0 ms.
-const CACHE_NAME = 'brackets-shell-v13';
+const CACHE_NAME = 'brackets-shell-v14';
 const SHELL_ASSETS = [
   './',
   './index.html',
