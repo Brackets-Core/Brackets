@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"name": "⚙️ Brackets (Sistema)",
+			"path": "."
+		},
+		{
+			"name": "💼 MyJobNotes (Vault Trabajo)",
+			"path": "../MyJobNotes"
+		},
+		{
+			"name": "🏠 MyPersonalNotes (Vault Personal)",
+			"path": "../MyPersonalNotes"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/__pycache__": true,
+			"**/*.pyc": true
+		}
+	}
+}

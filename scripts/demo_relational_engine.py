@@ -11,8 +11,8 @@ brackets_dir = os.path.dirname(os.path.abspath(__file__))
 if brackets_dir not in sys.path:
     sys.path.insert(0, brackets_dir)
 
-from brackets.managers.entity_manager import EntityManager
-from brackets.generators.bitacora_renderer import BitacoraRenderer
+from managers.entity_manager import EntityManager
+from generators.bitacora_renderer import BitacoraRenderer
 
 
 def run_demo():

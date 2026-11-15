@@ -8,7 +8,7 @@ import os
 CORE_PATH = os.path.join(os.path.dirname(__file__), "brackets")
 sys.path.insert(0, CORE_PATH)
 
-from brackets.utils.vault_creator import create_new_vault
+from utils.vault_creator import create_new_vault
 
 print("\n" + "="*60)
 print("🧪 DEMO: Creación de Vault")

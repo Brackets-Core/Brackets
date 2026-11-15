@@ -1,0 +1,21 @@
+# =============================================================================
+# Plantilla de Registro de Vaults de Brackets (copiar como vaults.yaml)
+# =============================================================================
+# Define la ubicación de tus vaults (carpetas hermanas con ../ o rutas absolutas).
+# Nota: Si tus vaults están como carpetas hermanas al mismo nivel que Brackets
+# (ej: C:/Projects/Brackets y C:/Projects/MyJobNotes), Brackets los autodescubre
+# automáticamente incluso sin crear vaults.yaml.
+#
+# También puedes añadir o cambiar la ruta de un vault en cualquier momento
+# ejecutando `python run_brackets.py` -> Opción "Vincular vault existente".
+# =============================================================================
+
+default_vault: MyJobNotes
+
+vaults:
+  - name: MyJobNotes
+    path: ../MyJobNotes
+    description: "Vault profesional de trabajo (Daily Hub, bitácoras, métricas)"
+  - name: MyPersonalNotes
+    path: ../MyPersonalNotes
+    description: "Notas y hábitos personales"

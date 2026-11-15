@@ -12,7 +12,7 @@ if core_dir not in sys.path:
     sys.path.insert(0, core_dir)
 
 # Importar y ejecutar el main desde brackets
-from brackets.main import main
+from main import main
 
 if __name__ == "__main__":
     main()

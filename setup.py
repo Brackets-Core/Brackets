@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 def read_version() -> str:
     metadata = {}
-    version_file = Path(__file__).parent / "brackets" / "version.py"
+    version_file = Path(__file__).parent / "version.py"
     exec(version_file.read_text(encoding="utf-8"), metadata)
     return str(metadata["VERSION"])
 

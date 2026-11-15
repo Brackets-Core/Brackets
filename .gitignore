@@ -21,9 +21,13 @@ wheels/
 *.egg
 
 # Virtual environments
+.venv/
 venv/
 ENV/
 env/
+
+# Local vault registry (each machine configures its own vault paths)
+vaults.yaml
 
 # IDEs
 .vscode/
