@@ -162,6 +162,16 @@ class BracketsWebService:
         for m in mentions:
             mgr.ensure_person(handle=m, created_at=today_str)
 
+    def _find_week_markdown_path(self, vault_path: str, year: int, week_number: int) -> Optional[str]:
+        """Busca un archivo [YYYY][MM]WeekXX.md existente en el vault para el año y semana dados."""
+        if not os.path.exists(vault_path):
+            return None
+        pattern = re.compile(rf"^\[{year}\]\[(\d{{2}})\]Week{week_number:02d}\.md$")
+        for fname in sorted(os.listdir(vault_path)):
+            if pattern.match(fname):
+                return os.path.join(vault_path, fname)
+        return None
+
     def _get_or_create_week(
         self,
         vault_path: str,
@@ -169,19 +179,21 @@ class BracketsWebService:
         year: Optional[int] = None,
         week_number: Optional[int] = None
     ) -> WeekSchedule:
-        """Obtiene la semana solicitada o actual, creándola e inicializándola si no existe."""
+        """Obtiene la semana solicitada o actual, importándola desde Markdown o creándola si no existe."""
         now = datetime.now()
         iso_year, iso_week, _ = now.isocalendar()
         target_year = year or iso_year
         target_week = week_number or iso_week
 
         week = mgr.load_week(target_year, target_week, reload=True)
-        if not week and (year is None and week_number is None) and mgr.weeks:
+        existing_md_path = self._find_week_markdown_path(vault_path, target_year, target_week) if not week else None
+
+        if not week and not existing_md_path and (year is None and week_number is None) and mgr.weeks:
             last_key = sorted(mgr.weeks.keys())[-1]
             week = mgr.weeks[last_key]
 
         if not week:
-            # Crear nueva semana programada
+            # Crear esqueleto de semana programada
             config_path = os.path.join(vault_path, "data", "config.yaml")
             days_count = 5
             if os.path.exists(config_path):
@@ -219,9 +231,17 @@ class BracketsWebService:
                 topic_ids=[],
                 note_ids=[]
             )
-            mgr.apply_recurring_tasks(week)
-            mgr.save_week(week)
-            self._render_and_save_week_md(vault_path, week, mgr)
+
+            if existing_md_path:
+                # Preservar el Markdown existente: registrar el esqueleto y absorber su contenido hacia YAML
+                mgr.save_week(week)
+                sync_service = MarkdownSyncService(mgr, vault_path)
+                sync_service.sync_week_from_markdown(existing_md_path, target_year, target_week)
+                week = mgr.load_week(target_year, target_week, reload=True) or week
+            else:
+                mgr.apply_recurring_tasks(week)
+                mgr.save_week(week)
+                self._render_and_save_week_md(vault_path, week, mgr)
 
         return week
 

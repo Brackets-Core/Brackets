@@ -378,6 +378,47 @@ class TestWebServiceAndApi(unittest.TestCase):
         self.assertIn("@AlbertoGuerra", handles)
         self.assertIn("@AdriaRauret", handles)
 
+    def test_existing_markdown_week_without_yaml_is_imported_not_overwritten(self):
+        """Si existe [YYYY][MM]WeekXX.md sin data/weeks/YYYY-WXX.yaml, debe importarse sin sobrescribirse."""
+        md_path = os.path.join(self.vault_dir, "[2026][11]Week46.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(
+                "# 🗓️Week 46\n\n"
+                "## 🎯Topics\n"
+                "  - \n"
+                "  ---\n\n"
+                "## 📋Week Tasks\n"
+                "  - [ ] Investigar WorkIQ MCP\n"
+                "  ---\n\n"
+                "## 📝Notes\n"
+                "- ### Proyectos IA\n"
+                "  - Nota importante preservada\n"
+                "  ---\n\n"
+                "## 🚗9\n"
+                "  - [x] Tarea completada el lunes\n\n"
+                "## 🏠12\n"
+                "  - [ ] Seguir investigando [🎫EXP-127925]\n\n"
+                "## Definiciones\n"
+                "<!-- Definiciones -->\n"
+                "[🎫EXP-127925]: https://example.atlassian.net/browse/EXP-127925\n"
+            )
+
+        hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=46)
+        week_task_titles = [t["title"] for t in hub["week_tasks"]]
+        self.assertIn("Investigar WorkIQ MCP", week_task_titles)
+
+        all_day_tasks = [t for d in hub["days"] for t in d["tasks"]]
+        self.assertTrue(any(t["title"] == "Tarea completada el lunes" and t["is_done"] for t in all_day_tasks))
+        self.assertTrue(any("EXP-127925" in t["title"] for t in all_day_tasks))
+        self.assertTrue(any(n["title"] == "Proyectos IA" for n in hub["notes"]))
+        self.assertTrue(any(d["id"] == "[🎫EXP-127925]" for d in hub["definitions"]))
+
+        with open(md_path, "r", encoding="utf-8") as f:
+            md_after = f.read()
+        self.assertIn("Investigar WorkIQ MCP", md_after)
+        self.assertIn("Tarea completada el lunes", md_after)
+        self.assertIn("[🎫EXP-127925]: https://example.atlassian.net/browse/EXP-127925", md_after)
+
 class TestHttpServerIntegration(unittest.TestCase):
     """Pruebas de integración HTTP sobre un servidor local efímero."""
 
