@@ -41,7 +41,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "brackets=brackets.main:main",
+            "brackets=main:main",
         ],
     },
 )

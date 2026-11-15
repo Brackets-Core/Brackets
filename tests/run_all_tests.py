@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Runner integral para ejecutar todos los tests unitarios y suites del sistema Brackets.
-Ejecutar desde la raíz del proyecto: python -m brackets.tests.run_all_tests
+Ejecutar desde la raíz del proyecto: python -m tests.run_all_tests
 """
 
 import sys

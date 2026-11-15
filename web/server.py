@@ -59,7 +59,7 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                 raise
 
     def __init__(self, *args, **kwargs):
-        # Servir estáticos desde brackets/web/static
+        # Servir estáticos desde web/static
         super().__init__(*args, directory=self.static_dir, **kwargs)
 
     def end_headers(self):
