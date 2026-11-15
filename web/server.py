@@ -14,6 +14,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from typing import Optional
 
 from web.service import BracketsWebService
+from services.vault_git_sync import VaultGitSyncService, VaultGitSyncWorker
 
 
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
@@ -851,6 +852,8 @@ def run_web_server(
     """Inicia el servidor web local para Brackets Web Hub."""
     service = BracketsWebService(workspace_root=workspace_root)
     BracketsApiHandler.service = service
+    git_sync_service = VaultGitSyncService(service)
+    git_sync_worker = VaultGitSyncWorker(git_sync_service)
 
     server_address = (host, port)
     
@@ -890,10 +893,13 @@ def run_web_server(
             except Exception:
                 pass
 
+    git_sync_worker.start()
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n👋 Deteniendo servidor web...")
+        git_sync_worker.stop(final_sync=True)
         httpd.server_close()
 
 
