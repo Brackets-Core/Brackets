@@ -309,7 +309,19 @@ class BitacoraMarkdownParser:
             elif stripped.startswith("- "):
                 bullet = stripped[2:].strip()
                 if bullet:
-                    current_bullets.append(bullet)
+                    is_indented = len(line) > len(line.lstrip())
+                    if current_title is not None and not is_indented:
+                        # Viñeta de nivel raíz tras una nota con título: inicia un bloque sin título separado
+                        blocks.append({
+                            "title": current_title,
+                            "project_id": current_proj,
+                            "content": current_bullets
+                        })
+                        current_title = None
+                        current_proj = None
+                        current_bullets = [bullet]
+                    else:
+                        current_bullets.append(bullet)
 
         if current_title or current_bullets:
             blocks.append({

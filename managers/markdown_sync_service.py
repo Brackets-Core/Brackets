@@ -261,37 +261,56 @@ class MarkdownSyncService:
         self.manager.sort_week_tasks_pending_first(week)
 
     def _reconcile_notes(self, week: WeekSchedule, note_blocks: List[Dict[str, Any]], year: int, week_num: int) -> None:
-        """Reconcilia bloques de notas editados a mano."""
+        """Reconcilia bloques de notas editados a mano sin duplicar notas con o sin título."""
         existing_notes = [self.manager.notes[nid] for nid in week.note_ids if nid in self.manager.notes]
+        matched_ids: Set[str] = set()
 
         for block in note_blocks:
             title = block.get("title")
             proj = block.get("project_id")
             bullets = block.get("content", [])
 
-            # Buscar nota existente
             matched_note = None
-            for n in existing_notes:
-                if title and n.title and n.title.strip().lower() == title.strip().lower():
-                    matched_note = n
-                    break
+            if title:
+                norm_title = title.strip().lower()
+                for n in existing_notes:
+                    if n.id not in matched_ids and n.title and n.title.strip().lower() == norm_title:
+                        matched_note = n
+                        break
+            elif bullets:
+                # Para notas sin título: buscar coincidencia exacta o por contenido solapado
+                for n in existing_notes:
+                    if n.id not in matched_ids and not n.title and n.content == bullets:
+                        matched_note = n
+                        break
+                if not matched_note:
+                    bullet_set = set(bullets)
+                    for n in existing_notes:
+                        if n.id not in matched_ids and not n.title and (set(n.content or []) & bullet_set):
+                            matched_note = n
+                            break
+                if not matched_note:
+                    for n in existing_notes:
+                        if n.id not in matched_ids and not n.title:
+                            matched_note = n
+                            break
 
             if matched_note:
-                # Actualizar viñetas y proyecto si cambiaron
+                matched_ids.add(matched_note.id)
                 if bullets:
                     matched_note.content = list(bullets)
                 if proj:
                     matched_note.project_id = proj
             else:
-                # Nota creada a mano en el markdown
                 if title or bullets:
-                    self.manager.add_note(
+                    created = self.manager.add_note(
                         title=title,
                         content=bullets,
                         project_id=proj,
                         year=year,
                         week_num=week_num
                     )
+                    matched_ids.add(created.id)
 
     def _find_task_for_day(
         self,

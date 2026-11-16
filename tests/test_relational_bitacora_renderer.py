@@ -172,6 +172,34 @@ class TestRelationalBitacoraRenderer(unittest.TestCase):
         self.assertIn("  - @MarcCristany propone hacer un upgrade de la versión de InfluxDB", markdown)
         self.assertIn("  - Tanto @FerranVallalta como @PabloMartinez están de acuerdo", markdown)
 
+    def test_notes_sync_idempotence_with_titled_and_untitled_notes(self):
+        """Verifica que render -> sync repetido con notas con y sin título no duplique notas ni viñetas."""
+        week = self.manager.load_week(2026, 34)
+        n_titled = self.manager.add_note(
+            title="ExTiVaS Cambios de Request Type",
+            content=["Bullet 1", "Bullet 2"],
+            year=2026,
+            week_num=34,
+        )
+        n_untitled = self.manager.add_note(
+            title=None,
+            content=["Nota suelta sin título"],
+            year=2026,
+            week_num=34,
+        )
+        initial_count = len(week.note_ids)
+
+        from managers.markdown_sync_service import MarkdownSyncService
+        md_path = os.path.join(self.tmp_dir, "[2026][08]Week34.md")
+        sync_service = MarkdownSyncService(self.manager, self.tmp_dir)
+        for _ in range(3):
+            BitacoraRenderer.render_and_save_week(week, self.manager, md_path)
+            sync_service.sync_week_from_markdown(md_path, 2026, 34)
+
+        self.assertEqual(len(week.note_ids), initial_count)
+        self.assertEqual(self.manager.notes[n_titled.id].content, ["Bullet 1", "Bullet 2"])
+        self.assertEqual(self.manager.notes[n_untitled.id].content, ["Nota suelta sin título"])
+
     def test_monthly_notes_persistence(self):
         """Verifica que las notas se guarden y carguen organizadas por mes en tables/notes/YYYY-MM.yaml."""
         # Agregar una nota en un mes específico
