@@ -172,6 +172,101 @@ class BracketsWebService:
                 return os.path.join(vault_path, fname)
         return None
 
+    def _build_week_skeleton(
+        self,
+        vault_path: str,
+        target_year: int,
+        target_week: int,
+        weight: Optional[float] = None,
+        topic_ids: Optional[List[str]] = None,
+    ) -> WeekSchedule:
+        """Construye un WeekSchedule vacío con los días y ubicaciones configurados para el vault."""
+        config_path = os.path.join(vault_path, "data", "config.yaml")
+        days_count = 5
+        if os.path.exists(config_path):
+            try:
+                import yaml
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    vault_type = cfg.get("vault_type", "work")
+                    days_count = cfg.get("days_per_week", 7 if vault_type == "personal" else 5)
+            except Exception:
+                pass
+
+        from managers.settings_manager import SettingsManager
+        settings = SettingsManager(vault_path)
+
+        first_day = datetime.fromisocalendar(target_year, target_week, 1)
+        days = []
+        for d_idx in range(days_count):
+            cur_date = first_day + timedelta(days=d_idx)
+            loc, note = settings.get_location_for_date(cur_date, target_week)
+            days.append(DaySchedule(
+                day_number=cur_date.day,
+                location_emoji=loc or "🏠",
+                location_note=note,
+                task_ids=[]
+            ))
+
+        return WeekSchedule(
+            year=target_year,
+            week_number=target_week,
+            month=first_day.month,
+            weight=weight,
+            days=days,
+            week_task_ids=[],
+            topic_ids=list(topic_ids) if topic_ids else [],
+            note_ids=[]
+        )
+
+    def _import_markdown_week(
+        self,
+        vault_path: str,
+        mgr: EntityManager,
+        year: int,
+        week_number: int,
+        md_path: str,
+    ) -> WeekSchedule:
+        """Registra el esqueleto YAML de una semana y absorbe el contenido de su Markdown existente."""
+        week = self._build_week_skeleton(vault_path, year, week_number)
+        mgr.save_week(week)
+        sync_service = MarkdownSyncService(mgr, vault_path)
+        sync_service.sync_week_from_markdown(md_path, year, week_number)
+        return mgr.load_week(year, week_number, reload=True) or week
+
+    def _load_previous_two_weeks(
+        self,
+        vault_path: str,
+        mgr: EntityManager,
+        target_year: int,
+        target_week: int,
+    ) -> tuple[Optional[WeekSchedule], Optional[WeekSchedule]]:
+        """Carga las dos semanas inmediatamente anteriores a (target_year, target_week)."""
+        available = [
+            item for item in self._collect_available_weeks(vault_path, mgr)
+            if (item["year"], item["week_number"]) < (target_year, target_week)
+        ]
+        prev_week: Optional[WeekSchedule] = None
+        prev_prev_week: Optional[WeekSchedule] = None
+
+        if available:
+            latest = available[0]
+            prev_week = mgr.load_week(latest["year"], latest["week_number"], reload=True)
+            if prev_week:
+                self._sync_week_from_markdown_if_exists(vault_path, prev_week, mgr)
+            else:
+                prev_md = self._find_week_markdown_path(vault_path, latest["year"], latest["week_number"])
+                if prev_md:
+                    prev_week = self._import_markdown_week(
+                        vault_path, mgr, latest["year"], latest["week_number"], prev_md
+                    )
+
+            if len(available) > 1:
+                second = available[1]
+                prev_prev_week = mgr.load_week(second["year"], second["week_number"], reload=True)
+
+        return prev_week, prev_prev_week
+
     def _get_or_create_week(
         self,
         vault_path: str,
@@ -179,7 +274,7 @@ class BracketsWebService:
         year: Optional[int] = None,
         week_number: Optional[int] = None
     ) -> WeekSchedule:
-        """Obtiene la semana solicitada o actual, importándola desde Markdown o creándola si no existe."""
+        """Obtiene la semana solicitada o actual, importándola desde Markdown o creándola con rollover si no existe."""
         now = datetime.now()
         iso_year, iso_week, _ = now.isocalendar()
         target_year = year or iso_year
@@ -188,60 +283,32 @@ class BracketsWebService:
         week = mgr.load_week(target_year, target_week, reload=True)
         existing_md_path = self._find_week_markdown_path(vault_path, target_year, target_week) if not week else None
 
-        if not week and not existing_md_path and (year is None and week_number is None) and mgr.weeks:
-            last_key = sorted(mgr.weeks.keys())[-1]
-            week = mgr.weeks[last_key]
+        if not week and not existing_md_path and (year is None and week_number is None):
+            # Si no existe la semana actual ni en YAML ni en MD, crearla automáticamente con rollover desde la anterior
+            pass
 
         if not week:
-            # Crear esqueleto de semana programada
-            config_path = os.path.join(vault_path, "data", "config.yaml")
-            days_count = 5
-            if os.path.exists(config_path):
-                try:
-                    import yaml
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        cfg = yaml.safe_load(f) or {}
-                        vault_type = cfg.get("vault_type", "work")
-                        days_count = cfg.get("days_per_week", 7 if vault_type == "personal" else 5)
-                except Exception:
-                    pass
-
-            from managers.settings_manager import SettingsManager
-            settings = SettingsManager(vault_path)
-
-            first_day = datetime.fromisocalendar(target_year, target_week, 1)
-            days = []
-            for d_idx in range(days_count):
-                cur_date = first_day + timedelta(days=d_idx)
-                loc, note = settings.get_location_for_date(cur_date, target_week)
-                days.append(DaySchedule(
-                    day_number=cur_date.day,
-                    location_emoji=loc or "🏠",
-                    location_note=note,
-                    task_ids=[]
-                ))
-
-            week = WeekSchedule(
-                year=target_year,
-                week_number=target_week,
-                month=first_day.month,
-                weight=None,
-                days=days,
-                week_task_ids=[],
-                topic_ids=[],
-                note_ids=[]
-            )
-
             if existing_md_path:
                 # Preservar el Markdown existente: registrar el esqueleto y absorber su contenido hacia YAML
-                mgr.save_week(week)
-                sync_service = MarkdownSyncService(mgr, vault_path)
-                sync_service.sync_week_from_markdown(existing_md_path, target_year, target_week)
-                week = mgr.load_week(target_year, target_week, reload=True) or week
+                week = self._import_markdown_week(vault_path, mgr, target_year, target_week, existing_md_path)
             else:
+                prev_week, prev_prev_week = self._load_previous_two_weeks(vault_path, mgr, target_year, target_week)
+                week = self._build_week_skeleton(
+                    vault_path,
+                    target_year,
+                    target_week,
+                    topic_ids=prev_week.topic_ids if prev_week and prev_week.topic_ids else None,
+                )
+                if prev_week:
+                    mgr.rollover_week_to_new_week(prev_week, week, prev_prev_week=prev_prev_week)
                 mgr.apply_recurring_tasks(week)
+                mgr.prune_tasks_older_than_two_weeks(week)
                 mgr.save_week(week)
                 self._render_and_save_week_md(vault_path, week, mgr)
+                backlog_path = os.path.join(vault_path, "[📋PROJECTS]✅BackLog.md")
+                BitacoraRenderer.render_and_save_backlog(
+                    mgr, backlog_path, scheduled_task_ids=mgr.get_scheduled_task_ids()
+                )
 
         return week
 

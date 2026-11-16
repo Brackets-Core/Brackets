@@ -419,6 +419,33 @@ class TestWebServiceAndApi(unittest.TestCase):
         self.assertIn("Tarea completada el lunes", md_after)
         self.assertIn("[🎫EXP-127925]: https://example.atlassian.net/browse/EXP-127925", md_after)
 
+    def test_auto_create_new_week_rolls_over_pending_tasks_from_previous_markdown_week(self):
+        """Al crear automáticamente una semana nueva (ej. W47), arrastra pendientes de W46 aunque W46 solo exista en .md."""
+        w46_path = os.path.join(self.vault_dir, "[2026][11]Week46.md")
+        with open(w46_path, "w", encoding="utf-8") as f:
+            f.write(
+                "# 🗓️Week 46\n\n"
+                "## 🎯Topics\n"
+                "  - \n"
+                "  ---\n\n"
+                "## 📋Week Tasks\n"
+                "  - [ ] Pendiente semanal W46\n"
+                "  - [x] Ya completada W46\n"
+                "  ---\n\n"
+                "## 🏠12\n"
+                "  - [ ] Pendiente del jueves W46\n"
+                "  - [ ] 🫱🏼‍🫲🏽 Reunión W46\n\n"
+                "## Definiciones\n"
+                "<!-- Definiciones -->\n"
+            )
+
+        hub = self.service.get_hub_data(self.vault_dir, year=2026, week_number=47)
+        week_task_titles = [t["title"] for t in hub["week_tasks"]]
+        self.assertIn("Pendiente semanal W46", week_task_titles)
+        self.assertIn("Pendiente del jueves W46", week_task_titles)
+        self.assertNotIn("Ya completada W46", week_task_titles)
+        self.assertNotIn("Reunión W46", week_task_titles)
+
 class TestHttpServerIntegration(unittest.TestCase):
     """Pruebas de integración HTTP sobre un servidor local efímero."""
 

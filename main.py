@@ -7,15 +7,23 @@ Punto de entrada CLI para el sistema de bitácoras Brackets.
 import sys
 import os
 
-# Configurar UTF-8 para Windows
+# Configurar UTF-8 para Windows (seguro también bajo pythonw.exe sin consola)
 if sys.platform == 'win32':
     import io
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
+    if sys.stdout is not None:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        elif hasattr(sys.stdout, 'buffer'):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     else:
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+        sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+    if sys.stderr is not None:
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8')
+        elif hasattr(sys.stderr, 'buffer'):
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    else:
+        sys.stderr = open(os.devnull, 'w', encoding='utf-8')
 
 # Asegurar que el directorio raíz del motor brackets esté en sys.path
 _pkg_root = os.path.dirname(os.path.abspath(__file__))

@@ -78,6 +78,9 @@ python run_brackets.py --vault MyPersonalNotes
 
 # Iniciar Brackets Web Hub (Interfaz PWA instalable + API REST en http://127.0.0.1:8080)
 python run_brackets.py --web
+
+# Crear acceso directo en el Menú Inicio (arranca el servidor oculto si no está activo y abre la app)
+powershell -ExecutionPolicy Bypass -File .\scripts\launch_web_hub.ps1 -CreateShortcut
 ```
 
 ---
