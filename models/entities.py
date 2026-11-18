@@ -189,6 +189,7 @@ class Task:
     recurring_id: Optional[str] = None
     task_type: str = "task"  # "task", "meeting"
     description: Optional[str] = None  # Líneas de descripción / detalle de la tarea
+    rollover_ttl_weeks: Optional[int] = None  # None = defecto (2 semanas), 0 = sin caducidad, N >= 1 = N semanas
 
     @property
     def is_done(self) -> bool:
@@ -232,7 +233,8 @@ class Task:
             topic_id=data.get("topic_id"),
             recurring_id=data.get("recurring_id"),
             task_type=data.get("task_type", "task"),
-            description="\n".join(str(x) for x in data["description"]) if isinstance(data.get("description"), list) else (str(data["description"]) if data.get("description") is not None else None)
+            description="\n".join(str(x) for x in data["description"]) if isinstance(data.get("description"), list) else (str(data["description"]) if data.get("description") is not None else None),
+            rollover_ttl_weeks=int(data["rollover_ttl_weeks"]) if data.get("rollover_ttl_weeks") is not None else None
         )
 
     def to_dict(self) -> Dict[str, Any]:

@@ -581,7 +581,9 @@ class EntityManager:
         is_week_task: bool = False,
         recurring_id: Optional[str] = None,
         task_type: str = "task",
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        completed_at: Optional[str] = None,
+        rollover_ttl_weeks: Optional[int] = None
     ) -> Task:
         """Crea una tarea, la registra en la tabla y opcionalmente la vincula a la semana/día."""
         today_str = datetime.now().strftime("%Y-%m-%d")
@@ -593,17 +595,20 @@ class EntityManager:
             if not project_id:
                 project_id = self.topics[topic_id].project_id
 
+        resolved_completed_at = completed_at if (status == "done" and completed_at) else (today_str if status == "done" else None)
+
         task = Task(
             id=task_id,
             title=title.strip(),
             status=status,
             created_at=today_str,
-            completed_at=today_str if status == "done" else None,
+            completed_at=resolved_completed_at,
             project_id=project_id,
             topic_id=topic_id,
             recurring_id=recurring_id,
             task_type=task_type,
-            description=description.strip() if description else None
+            description=description.strip() if description else None,
+            rollover_ttl_weeks=rollover_ttl_weeks
         )
 
         self.tasks[task_id] = task
@@ -1337,19 +1342,11 @@ class EntityManager:
 
         rolled_count = 0
         for tid in pending_from_prev:
-            is_two_weeks_old = tid in two_weeks_old_ids
             task = self.tasks.get(tid)
-            if not is_two_weeks_old and task and task.created_at:
-                try:
-                    dt = datetime.strptime(task.created_at, "%Y-%m-%d")
-                    iso_y, iso_w, _ = dt.isocalendar()
-                    if (new_week.year - iso_y) * 52 + (new_week.week_number - iso_w) >= 2:
-                        is_two_weeks_old = True
-                except Exception:
-                    pass
+            if not task:
+                continue
 
-            # Regla de 2 semanas: si ya estuvo hace 2 semanas o más, se desagenda
-            if is_two_weeks_old:
+            if self._is_task_expired_for_week(task, new_week, prev_prev_week=prev_prev_week):
                 continue  # Pasa automáticamente a quedar en Backlog no agendado
 
             if tid not in new_week.week_task_ids:
@@ -1363,22 +1360,47 @@ class EntityManager:
             log4brackets.log_rollover(prev_week.week_number, new_week.week_number, rolled_count)
         return rolled_count
 
+    def _is_task_expired_for_week(
+        self,
+        task: Task,
+        target_week: WeekSchedule,
+        prev_prev_week: Optional[WeekSchedule] = None,
+    ) -> bool:
+        """Determina si una tarea pendiente ha superado su caducidad (por defecto 2 semanas; 0 = sin caducidad)."""
+        ttl = 2 if task.rollover_ttl_weeks is None else int(task.rollover_ttl_weeks)
+        if ttl <= 0:
+            return False
+
+        # Comprobar presencia en semanas con distancia >= ttl
+        weeks_to_check = list(self.weeks.values())
+        if prev_prev_week is not None:
+            weeks_to_check.append(prev_prev_week)
+
+        for w in weeks_to_check:
+            week_diff = (target_week.year - w.year) * 52 + (target_week.week_number - w.week_number)
+            if week_diff >= ttl:
+                if task.id in w.week_task_ids or task.id in w.topics_task_ids or any(task.id in d.task_ids for d in w.days):
+                    return True
+
+        if task.created_at:
+            try:
+                dt = datetime.strptime(task.created_at, "%Y-%m-%d")
+                iso_y, iso_w, _ = dt.isocalendar()
+                if (target_week.year - iso_y) * 52 + (target_week.week_number - iso_w) >= ttl:
+                    return True
+            except Exception:
+                pass
+
+        return False
+
     def prune_tasks_older_than_two_weeks(self, week: WeekSchedule) -> int:
         """
         Revisa todas las tareas agendadas en la semana (en week_task_ids y en days).
-        Si una tarea pendiente lleva 2 o más semanas de antigüedad (nació o estuvo presente
-        en semanas anteriores a (week_number - 1)), se desagenda de la semana para que
-        quede limpia y preservada en el Backlog de su proyecto.
+        Si una tarea pendiente ha superado su caducidad (por defecto 2 semanas, configurable
+        con `rollover_ttl_weeks`; 0 = nunca caduca), se desagenda de la semana para que
+        quede preservada en el Backlog de su proyecto.
         Devuelve el número de tareas migradas al backlog.
         """
-        prior_week_task_ids: Set[str] = set()
-        for w_key, w in self.weeks.items():
-            if w.year < week.year or (w.year == week.year and w.week_number <= week.week_number - 2):
-                prior_week_task_ids.update(w.week_task_ids)
-                prior_week_task_ids.update(w.topics_task_ids)
-                for d in w.days:
-                    prior_week_task_ids.update(d.task_ids)
-
         pruned_count = 0
 
         # Comprobar week_task_ids
@@ -1387,17 +1409,7 @@ class EntityManager:
             if not task or not task.is_pending:
                 continue
 
-            is_old = tid in prior_week_task_ids
-            if not is_old and task.created_at:
-                try:
-                    dt = datetime.strptime(task.created_at, "%Y-%m-%d")
-                    iso_y, iso_w, _ = dt.isocalendar()
-                    if (week.year - iso_y) * 52 + (week.week_number - iso_w) >= 2:
-                        is_old = True
-                except Exception:
-                    pass
-
-            if is_old:
+            if self._is_task_expired_for_week(task, week):
                 week.week_task_ids.remove(tid)
                 if tid in week.topics_task_ids:
                     week.topics_task_ids.remove(tid)
@@ -1411,17 +1423,7 @@ class EntityManager:
                 if not task or not task.is_pending:
                     continue
 
-                is_old = tid in prior_week_task_ids
-                if not is_old and task.created_at:
-                    try:
-                        dt = datetime.strptime(task.created_at, "%Y-%m-%d")
-                        iso_y, iso_w, _ = dt.isocalendar()
-                        if (week.year - iso_y) * 52 + (week.week_number - iso_w) >= 2:
-                            is_old = True
-                    except Exception:
-                        pass
-
-                if is_old:
+                if self._is_task_expired_for_week(task, week):
                     d.task_ids.remove(tid)
                     pruned_count += 1
                     log4brackets.log_task_backlogged(task.id, task.project_id, task.title)

@@ -377,6 +377,7 @@ class TestWebServiceAndApi(unittest.TestCase):
         handles = [p["handle"] for p in hub.get("people", [])]
         self.assertIn("@AlbertoGuerra", handles)
         self.assertIn("@AdriaRauret", handles)
+        self.assertTrue(any(t["day_number"] is not None and not t["is_week_task"] for t in hub["today_tasks"]))
 
     def test_existing_markdown_week_without_yaml_is_imported_not_overwritten(self):
         """Si existe [YYYY][MM]WeekXX.md sin data/weeks/YYYY-WXX.yaml, debe importarse sin sobrescribirse."""
@@ -418,6 +419,62 @@ class TestWebServiceAndApi(unittest.TestCase):
         self.assertIn("Investigar WorkIQ MCP", md_after)
         self.assertIn("Tarea completada el lunes", md_after)
         self.assertIn("[🎫EXP-127925]: https://example.atlassian.net/browse/EXP-127925", md_after)
+
+    def test_topic_inheritance_custom_ttl_and_completed_at_edit(self):
+        """Valida herencia de proyecto desde Topic, caducidad configurable (0 = sin caducidad) y edición de completed_at."""
+        topic_res = self.service.create_topic(
+            vault_identifier=self.vault_dir,
+            title="Cambios RequestType #[EXTIVAS]",
+            year=2026,
+            week_number=40
+        )
+        topic_id = topic_res["topic"]["id"]
+
+        # 1. Crear tarea asociada al topic sin caducidad (rollover_ttl_weeks=0)
+        t_res = self.service.create_task(
+            vault_identifier=self.vault_dir,
+            title="Tarea persistente sin caducidad",
+            target="week",
+            topic_id=topic_id,
+            rollover_ttl_weeks=0,
+            year=2026,
+            week_number=40
+        )
+        tid = t_res["task"]["id"]
+        self.assertEqual(t_res["task"]["topic_id"], topic_id)
+        self.assertEqual(t_res["task"]["project_id"], "EXTIVAS")
+        self.assertEqual(t_res["task"]["rollover_ttl_weeks"], 0)
+
+        # Crear nota asociada al topic
+        n_res = self.service.create_note(
+            vault_identifier=self.vault_dir,
+            title="Acuerdo técnico",
+            content=["Detalle 1"],
+            topic_id=topic_id,
+            year=2026,
+            week_number=40
+        )
+        self.assertEqual(n_res["note"]["topic_id"], topic_id)
+        self.assertEqual(n_res["note"]["project_id"], "EXTIVAS")
+
+        # 2. Avanzar 3 semanas (W40 -> W43): la tarea con ttl=0 NO caduca ni se desagenda
+        mgr = self.service.get_entity_manager(self.vault_dir)
+        w40 = mgr.load_week(2026, 40)
+        w43 = self.service._build_week_skeleton(self.vault_dir, 2026, 43)
+        rolled = mgr.rollover_week_to_new_week(w40, w43)
+        self.assertEqual(rolled, 1)
+        self.assertIn(tid, w43.week_task_ids)
+
+        # 3. Marcar como hecha y ajustar completed_at a fecha pasada
+        upd = self.service.update_task(
+            vault_identifier=self.vault_dir,
+            task_id=tid,
+            status="done",
+            completed_at="2026-10-15",
+            year=2026,
+            week_number=40
+        )
+        self.assertEqual(upd["task"]["completed_at"], "2026-10-15")
 
     def test_auto_create_new_week_rolls_over_pending_tasks_from_previous_markdown_week(self):
         """Al crear automáticamente una semana nueva (ej. W47), arrastra pendientes de W46 aunque W46 solo exista en .md."""
@@ -816,6 +873,16 @@ class TestHttpServerIntegration(unittest.TestCase):
         with urllib.request.urlopen(urllib.request.Request(cons_y_url, data=cons_y_body, headers={"Content-Type": "application/json"})) as resp:
             self.assertEqual(resp.status, 200)
             self.assertEqual(json.loads(resp.read().decode("utf-8"))["file"], "[2026].md")
+
+        # 6. POST /api/open-url (abre en navegador por defecto sin error 500)
+        from unittest.mock import patch
+        open_url_endpoint = f"{self.base_url}/api/open-url"
+        open_body = json.dumps({"url": "https://example.atlassian.net/browse/EXP-127925"}).encode("utf-8")
+        with patch("os.startfile", create=True) as mock_startfile, patch("webbrowser.open") as mock_wb:
+            with urllib.request.urlopen(urllib.request.Request(open_url_endpoint, data=open_body, headers={"Content-Type": "application/json"})) as resp:
+                self.assertEqual(resp.status, 200)
+                self.assertTrue(json.loads(resp.read().decode("utf-8"))["success"])
+            self.assertTrue(mock_startfile.called or mock_wb.called)
 
 
 if __name__ == "__main__":

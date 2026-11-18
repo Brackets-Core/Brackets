@@ -388,7 +388,10 @@ class BracketsWebService:
                 "is_active": (active_day is not None and d.day_number == active_day.day_number),
                 "is_today": (d.day_number == now.day),
                 "task_count": len(d.task_ids),
-                "tasks": [self._serialize_task(mgr.tasks[tid]) for tid in d.task_ids if tid in mgr.tasks]
+                "tasks": [
+                    self._serialize_task(mgr.tasks[tid], day_number=d.day_number, is_week_task=False)
+                    for tid in d.task_ids if tid in mgr.tasks
+                ]
             })
 
         # Serializar tareas del día activo
@@ -397,14 +400,16 @@ class BracketsWebService:
             for tid in active_day.task_ids:
                 task = mgr.tasks.get(tid)
                 if task:
-                    today_tasks.append(self._serialize_task(task))
+                    today_tasks.append(
+                        self._serialize_task(task, day_number=active_day.day_number, is_week_task=False)
+                    )
 
         # Serializar tareas semanales (sin día asignado)
         week_tasks = []
         for tid in week.week_task_ids:
             task = mgr.tasks.get(tid)
             if task:
-                week_tasks.append(self._serialize_task(task))
+                week_tasks.append(self._serialize_task(task, day_number=None, is_week_task=True))
 
         # Serializar notas de la semana
         notes_data = []
@@ -581,8 +586,15 @@ class BracketsWebService:
             "top_menu": top_menu
         }
 
-    def _serialize_task(self, task: Task) -> Dict[str, Any]:
+    def _serialize_task(
+        self,
+        task: Task,
+        day_number: Optional[int] = None,
+        is_week_task: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         """Serializa una entidad Task para la API JSON."""
+        resolved_day = day_number if day_number is not None else getattr(task, "day_number", None)
+        resolved_week = is_week_task if is_week_task is not None else getattr(task, "is_week_task", False)
         return {
             "id": task.id,
             "title": task.title,
@@ -593,11 +605,13 @@ class BracketsWebService:
             "task_type": task.task_type,
             "premoji": task.premoji,
             "project_id": task.project_id,
+            "topic_id": task.topic_id,
             "description": task.description,
             "created_at": task.created_at,
             "completed_at": task.completed_at,
-            "day_number": getattr(task, "day_number", None),
-            "is_week_task": getattr(task, "is_week_task", False)
+            "rollover_ttl_weeks": task.rollover_ttl_weeks,
+            "day_number": resolved_day,
+            "is_week_task": resolved_week
         }
 
     def create_task(
@@ -608,8 +622,11 @@ class BracketsWebService:
         status: str = "pending",  # "pending", "done"
         description: Optional[str] = None,
         project_id: Optional[str] = None,
+        topic_id: Optional[str] = None,
         day: Optional[int] = None,
         is_done: Optional[bool] = None,
+        completed_at: Optional[str] = None,
+        rollover_ttl_weeks: Optional[int] = None,
         year: Optional[int] = None,
         week_number: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -633,6 +650,8 @@ class BracketsWebService:
         task_type, clean_title = TaskTypeRegistry.detect_task_type_and_clean_title(title)
         proj_tag, clean_title = BitacoraMarkdownParser.parse_project_tag(clean_title)
         final_proj = project_id or proj_tag
+        if not final_proj and topic_id and topic_id in mgr.topics:
+            final_proj = mgr.topics[topic_id].project_id
         if final_proj:
             mgr.ensure_project(final_proj)
 
@@ -677,13 +696,16 @@ class BracketsWebService:
             title=clean_title,
             status=status,
             project_id=final_proj,
+            topic_id=topic_id,
             year=week.year,
             week_num=week.week_number,
             day_number=target_day_num if not is_week_task else None,
             is_week_task=is_week_task,
             recurring_id=recurring_id,
             task_type=task_type or "task",
-            description=description.strip() if description else None
+            description=description.strip() if description else None,
+            completed_at=completed_at,
+            rollover_ttl_weeks=rollover_ttl_weeks
         )
 
         # Ordenar pendientes primero
@@ -839,6 +861,7 @@ class BracketsWebService:
         title: Optional[str] = None,
         content: Any = "",
         project_id: Optional[str] = None,
+        topic_id: Optional[str] = None,
         year: Optional[int] = None,
         week_number: Optional[int] = None
     ) -> Dict[str, Any]:
@@ -855,6 +878,8 @@ class BracketsWebService:
             proj_tag, clean_title = BitacoraMarkdownParser.parse_project_tag(clean_title)
 
         final_proj = project_id or proj_tag
+        if not final_proj and topic_id and topic_id in mgr.topics:
+            final_proj = mgr.topics[topic_id].project_id
         if final_proj:
             mgr.ensure_project(final_proj)
 
@@ -873,7 +898,8 @@ class BracketsWebService:
             year=week.year,
             week_num=week.week_number,
             title=clean_title if clean_title else None,
-            project_id=final_proj
+            project_id=final_proj,
+            topic_id=topic_id
         )
 
         self._auto_register_people_in_text(mgr, clean_title, *bullets)
@@ -884,7 +910,8 @@ class BracketsWebService:
                 "id": note.id,
                 "title": note.title,
                 "content": note.content,
-                "project_id": note.project_id
+                "project_id": note.project_id,
+                "topic_id": note.topic_id
             }
         }
 
@@ -1005,10 +1032,16 @@ class BracketsWebService:
         description: Optional[str] = None,
         status: Optional[str] = None,
         target: Optional[str] = None,
+        project_id: Optional[str] = None,
+        topic_id: Optional[str] = None,
+        completed_at: Optional[str] = None,
+        rollover_ttl_weeks: Optional[int] = None,
+        update_association: bool = False,
+        update_ttl: bool = False,
         year: Optional[int] = None,
         week_number: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Actualiza título, descripción, estado o día/semana de una tarea."""
+        """Actualiza título, descripción, estado, asociación, caducidad, fecha de resolución o día/semana."""
         vault_path = self.resolve_vault_path(vault_identifier)
         mgr = self.get_entity_manager(vault_path)
         week = self._get_or_create_week(vault_path, mgr, year=year, week_number=week_number)
@@ -1028,6 +1061,16 @@ class BracketsWebService:
                 mgr.ensure_project(proj_tag)
                 task.project_id = proj_tag
 
+        if update_association:
+            task.topic_id = topic_id or None
+            if project_id:
+                mgr.ensure_project(project_id)
+                task.project_id = project_id
+            elif topic_id and topic_id in mgr.topics:
+                task.project_id = mgr.topics[topic_id].project_id
+            elif not topic_id and project_id == "":
+                task.project_id = None
+
         if description is not None:
             task.description = description.strip() if description.strip() else None
 
@@ -1037,6 +1080,13 @@ class BracketsWebService:
                 task.completed_at = datetime.now().strftime("%Y-%m-%d")
             elif not task.is_done:
                 task.completed_at = None
+
+        if completed_at is not None and task.is_done:
+            clean_date = completed_at.strip()
+            task.completed_at = clean_date if clean_date else task.completed_at
+
+        if update_ttl:
+            task.rollover_ttl_weeks = int(rollover_ttl_weeks) if rollover_ttl_weeks is not None else None
 
         # Cambiar de día o a tarea de la semana si se especifica target
         if target is not None:
@@ -1112,6 +1162,7 @@ class BracketsWebService:
         vault_identifier: Optional[str] = None,
         topic_id: str = "",
         title: str = "",
+        project_id: Optional[str] = None,
         year: Optional[int] = None,
         week_number: Optional[int] = None
     ) -> Dict[str, Any]:
@@ -1131,9 +1182,10 @@ class BracketsWebService:
 
         proj_tag, clean_title = BitacoraMarkdownParser.parse_project_tag(clean_title)
         topic.title = clean_title
-        if proj_tag:
-            mgr.ensure_project(proj_tag)
-            topic.project_id = proj_tag
+        final_proj = proj_tag or project_id
+        if final_proj:
+            mgr.ensure_project(final_proj)
+            topic.project_id = final_proj
 
         mgr.save_topics()
         self._auto_register_people_in_text(mgr, clean_title)

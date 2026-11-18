@@ -8,6 +8,7 @@ usando exclusivamente la librería estándar de Python (sin dependencias externa
 from __future__ import annotations
 import os
 import re
+import sys
 import json
 import urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -208,8 +209,11 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                     status = body.get("status", "pending")
                     description = body.get("description")
                     project_id = body.get("project_id")
+                    topic_id = body.get("topic_id")
                     day = body.get("day")
                     is_done = body.get("is_done")
+                    completed_at = body.get("completed_at")
+                    rollover_ttl_weeks = body.get("rollover_ttl_weeks")
                     year = body.get("year")
                     week = body.get("week") or body.get("week_number")
 
@@ -220,8 +224,11 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                         status=status,
                         description=description,
                         project_id=project_id,
+                        topic_id=topic_id,
                         day=day,
                         is_done=is_done,
+                        completed_at=completed_at,
+                        rollover_ttl_weeks=rollover_ttl_weeks,
                         year=year,
                         week_number=week
                     )
@@ -261,6 +268,7 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                     title = body.get("title")
                     content = body.get("content", "")
                     project_id = body.get("project_id")
+                    topic_id = body.get("topic_id")
                     year = body.get("year")
                     week = body.get("week") or body.get("week_number")
                     created = svc.create_note(
@@ -268,6 +276,7 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                         title=title,
                         content=content,
                         project_id=project_id,
+                        topic_id=topic_id,
                         year=year,
                         week_number=week
                     )
@@ -523,6 +532,17 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                     )
                     return self._send_json(200, res)
 
+                elif path == "/api/open-url":
+                    url = str(body.get("url") or "").strip()
+                    if not (url.startswith("https://") or url.startswith("http://")):
+                        return self._send_json(400, {"error": "URL inválida: debe empezar por http:// o https://"})
+                    if sys.platform == "win32":
+                        os.startfile(url)
+                    else:
+                        import webbrowser
+                        webbrowser.open(url)
+                    return self._send_json(200, {"success": True, "url": url})
+
                 else:
                     return self._send_json(404, {"error": f"Ruta POST no encontrada: {path}"})
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
@@ -586,6 +606,12 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                     description = body.get("description")
                     status = body.get("status")
                     target = body.get("target")
+                    project_id = body.get("project_id")
+                    topic_id = body.get("topic_id")
+                    completed_at = body.get("completed_at")
+                    rollover_ttl_weeks = body.get("rollover_ttl_weeks")
+                    update_association = ("project_id" in body) or ("topic_id" in body)
+                    update_ttl = "rollover_ttl_weeks" in body
                     year = body.get("year")
                     week = body.get("week") or body.get("week_number")
                     updated = svc.update_task(
@@ -595,6 +621,12 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                         description=description,
                         status=status,
                         target=target,
+                        project_id=project_id,
+                        topic_id=topic_id,
+                        completed_at=completed_at,
+                        rollover_ttl_weeks=rollover_ttl_weeks,
+                        update_association=update_association,
+                        update_ttl=update_ttl,
                         year=year,
                         week_number=week
                     )
@@ -606,12 +638,14 @@ class BracketsApiHandler(SimpleHTTPRequestHandler):
                     topic_id = urllib.parse.unquote(topic_match.group(1))
                     vault = body.get("vault")
                     title = body.get("title", "")
+                    project_id = body.get("project_id")
                     year = body.get("year")
                     week = body.get("week") or body.get("week_number")
                     updated = svc.update_topic(
                         vault_identifier=vault,
                         topic_id=topic_id,
                         title=title,
+                        project_id=project_id,
                         year=year,
                         week_number=week
                     )

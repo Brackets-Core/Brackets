@@ -73,6 +73,7 @@ const el = {
   btnSubmitDef: document.getElementById('btnSubmitDef'),
 
   btnSoundToggle: document.getElementById('btnSoundToggle'),
+  btnVisualSettings: document.getElementById('btnVisualSettings'),
   btnSync: document.getElementById('btnSync'),
   btnPwaInstall: document.getElementById('btnPwaInstall'),
 
@@ -104,7 +105,12 @@ const el = {
 // ---------------------------------------------------------------------------
 // Cerrar popover de ubicación y menús desplegables al pulsar fuera o Esc
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('#locationPopover') && !e.target.closest('.day-loc-btn')) {
+  if (
+    !e.target.closest('#locationPopover') &&
+    !e.target.closest('.day-loc-btn') &&
+    !e.target.closest('#dayNotePopover') &&
+    !e.target.closest('.day-note-indicator')
+  ) {
     closeLocationPopover();
   }
   // No cerrar si el clic ocurre dentro del drawer, en el botón hamburguesa o en elementos de menú
@@ -130,6 +136,7 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('resize', closeLocationPopover);
 
 document.addEventListener('DOMContentLoaded', async () => {
+  applyVisualSettings(loadVisualSettings());
   setupPwaInstall();
   setupEventListeners();
   setupFabMenu();
@@ -141,6 +148,291 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadVaults();
   await loadHub();
 });
+
+const VISUAL_SETTINGS_KEY = 'brackets_visual_settings_v1';
+const DEFAULT_VISUAL_SETTINGS = {
+  sectionGap: 12,
+  itemGap: 4,
+  itemPadY: 3,
+  tintIntensity: 7,
+  sectionColors: {
+    'today-tasks': '#3b82f6',
+    'week-topics': '#8b5cf6',
+    'week-tasks': '#14b8a6',
+    'week-notes': '#f59e0b',
+    'week-definitions': '#10b981'
+  }
+};
+
+function hexToRgba(hex, alpha) {
+  const clean = String(hex || '#3b82f6').replace('#', '');
+  const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean;
+  const num = parseInt(full, 16);
+  if (Number.isNaN(num)) return `rgba(59, 130, 246, ${alpha})`;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function loadVisualSettings() {
+  try {
+    const raw = localStorage.getItem(VISUAL_SETTINGS_KEY);
+    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_VISUAL_SETTINGS));
+    const parsed = JSON.parse(raw);
+    return {
+      sectionGap: Number.isFinite(parsed.sectionGap) ? parsed.sectionGap : DEFAULT_VISUAL_SETTINGS.sectionGap,
+      itemGap: Number.isFinite(parsed.itemGap) ? parsed.itemGap : DEFAULT_VISUAL_SETTINGS.itemGap,
+      itemPadY: Number.isFinite(parsed.itemPadY) ? parsed.itemPadY : DEFAULT_VISUAL_SETTINGS.itemPadY,
+      tintIntensity: Number.isFinite(parsed.tintIntensity) ? parsed.tintIntensity : DEFAULT_VISUAL_SETTINGS.tintIntensity,
+      sectionColors: Object.assign({}, DEFAULT_VISUAL_SETTINGS.sectionColors, parsed.sectionColors || {})
+    };
+  } catch (err) {
+    return JSON.parse(JSON.stringify(DEFAULT_VISUAL_SETTINGS));
+  }
+}
+
+function saveVisualSettings(settings) {
+  try {
+    localStorage.setItem(VISUAL_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (err) {
+    console.warn('No se pudieron guardar los ajustes visuales:', err);
+  }
+}
+
+function applyVisualSettings(settings) {
+  const root = document.documentElement.style;
+  root.setProperty('--section-gap', `${settings.sectionGap}px`);
+  root.setProperty('--item-gap', `${settings.itemGap}px`);
+  root.setProperty('--item-pad-y', `${settings.itemPadY}px`);
+
+  const topAlpha = Math.max(0, Math.min(0.35, settings.tintIntensity / 100));
+  const botAlpha = +(topAlpha * 0.28).toFixed(3);
+  const borderAlpha = Math.min(0.45, +(0.11 + topAlpha * 1.15).toFixed(3));
+
+  Object.entries(settings.sectionColors || {}).forEach(([secId, hex]) => {
+    if (topAlpha <= 0) {
+      root.setProperty(`--sec-${secId}-bg`, 'var(--bg-surface)');
+      root.setProperty(`--sec-${secId}-border`, 'rgba(147, 197, 253, 0.14)');
+    } else {
+      root.setProperty(
+        `--sec-${secId}-bg`,
+        `linear-gradient(180deg, ${hexToRgba(hex, topAlpha.toFixed(3))} 0%, ${hexToRgba(hex, botAlpha)} 100%), var(--bg-surface)`
+      );
+      root.setProperty(`--sec-${secId}-border`, hexToRgba(hex, borderAlpha));
+    }
+  });
+}
+
+function openVisualSettingsModal() {
+  let current = loadVisualSettings();
+  const sectionLabels = [
+    { id: 'today-tasks', label: 'Tareas de Hoy', desc: 'Panel principal de tareas del día activo', icon: '📋' },
+    { id: 'week-topics', label: 'Topics de la Semana', desc: 'Frentes y objetivos semanales por proyecto', icon: '🎯' },
+    { id: 'week-tasks', label: 'Tareas de la Semana', desc: 'Pendientes semanales sin día fijo asignado', icon: '⏳' },
+    { id: 'week-notes', label: 'Notas de la Semana', desc: 'Apuntes y acuerdos registrados en la semana', icon: '📝' },
+    { id: 'week-definitions', label: 'Definiciones y Enlaces', desc: 'Tickets Jira y referencias rápidas', icon: '🎫' }
+  ];
+
+  const colorsHtml = sectionLabels.map((s) => {
+    const hex = current.sectionColors[s.id] || '#3b82f6';
+    return `
+      <div class="vs-setting-row">
+        <div class="vs-setting-info">
+          <div class="vs-setting-name">${s.icon} ${s.label}</div>
+          <div class="vs-setting-desc">${s.desc}</div>
+        </div>
+        <label class="vs-color-pill" title="Elegir color">
+          <span class="vs-color-hex" data-sec-hex="${s.id}">${escapeHtml(hex)}</span>
+          <input type="color" class="vs-color-input" data-sec-color="${s.id}" value="${escapeHtml(hex)}">
+        </label>
+      </div>
+    `;
+  }).join('');
+
+  const soundOn = isSoundEnabled();
+
+  openModal('⚙️ Ajustes de Brackets', `
+    <div class="vs-shell">
+      <aside class="vs-sidebar" role="tablist" aria-label="Categorías de ajustes">
+        <button type="button" class="vs-nav-item active" data-vs-tab="spacing" role="tab" aria-selected="true">
+          <span class="vs-nav-icon">📐</span>
+          <span>Espaciado</span>
+        </button>
+        <button type="button" class="vs-nav-item" data-vs-tab="colors" role="tab" aria-selected="false">
+          <span class="vs-nav-icon">🎨</span>
+          <span>Colores</span>
+        </button>
+        <button type="button" class="vs-nav-item" data-vs-tab="general" role="tab" aria-selected="false">
+          <span class="vs-nav-icon">🔊</span>
+          <span>General</span>
+        </button>
+      </aside>
+
+      <div class="vs-content">
+        <div class="vs-tab-pane active" data-vs-pane="spacing">
+          <div class="vs-pane-header">
+            <div class="vs-pane-title">Densidad y Espaciado</div>
+            <div class="vs-pane-sub">Ajusta los márgenes en tiempo real sobre el Hub</div>
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Separación entre secciones</div>
+                <div class="vs-setting-desc">Espacio vertical entre los paneles principales</div>
+              </div>
+              <span id="vsValSectionGap" class="vs-value-pill">${current.sectionGap}px</span>
+            </div>
+            <input id="vsSectionGap" class="vs-range" type="range" min="0" max="24" step="1" value="${current.sectionGap}">
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Separación entre elementos</div>
+                <div class="vs-setting-desc">Distancia entre tarjetas dentro de cada sección</div>
+              </div>
+              <span id="vsValItemGap" class="vs-value-pill">${current.itemGap}px</span>
+            </div>
+            <input id="vsItemGap" class="vs-range" type="range" min="0" max="12" step="1" value="${current.itemGap}">
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Padding vertical en tarjetas</div>
+                <div class="vs-setting-desc">Relleno interior arriba y abajo de cada elemento</div>
+              </div>
+              <span id="vsValItemPadY" class="vs-value-pill">${current.itemPadY}px</span>
+            </div>
+            <input id="vsItemPadY" class="vs-range" type="range" min="1" max="12" step="1" value="${current.itemPadY}">
+          </div>
+        </div>
+
+        <div class="vs-tab-pane" data-vs-pane="colors">
+          <div class="vs-pane-header">
+            <div class="vs-pane-title">Colores de Secciones</div>
+            <div class="vs-pane-sub">Tintes sutiles translúcidos para distinguir cada bloque</div>
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Intensidad del tinte</div>
+                <div class="vs-setting-desc">Opacidad del degradado de fondo (0% = neutro)</div>
+              </div>
+              <span id="vsValTint" class="vs-value-pill">${current.tintIntensity}%</span>
+            </div>
+            <input id="vsTintIntensity" class="vs-range" type="range" min="0" max="25" step="1" value="${current.tintIntensity}">
+          </div>
+
+          <div class="vs-colors-list">
+            ${colorsHtml}
+          </div>
+        </div>
+
+        <div class="vs-tab-pane" data-vs-pane="general">
+          <div class="vs-pane-header">
+            <div class="vs-pane-title">Preferencias Generales</div>
+            <div class="vs-pane-sub">Comportamiento local de la aplicación</div>
+          </div>
+
+          <div class="vs-setting-row">
+            <div class="vs-setting-info">
+              <div class="vs-setting-name">Efectos de sonido</div>
+              <div class="vs-setting-desc">Sonido sutil al completar tareas</div>
+            </div>
+            <button id="vsSoundToggle" type="button" class="vs-toggle-btn ${soundOn ? 'active' : ''}">
+              ${soundOn ? 'Activado' : 'Silenciado'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="vs-footer">
+      <button id="btnVsReset" class="btn-edit-cancel" type="button">↺ Restaurar valores</button>
+      <button id="btnVsClose" class="btn-edit-save" type="button">Listo ✓</button>
+    </div>
+  `, { variant: 'floating-settings' });
+
+  // Navegación de pestañas del sidebar
+  document.querySelectorAll('.vs-nav-item').forEach((navBtn) => {
+    navBtn.addEventListener('click', () => {
+      const targetTab = navBtn.dataset.vsTab;
+      document.querySelectorAll('.vs-nav-item').forEach((b) => {
+        const isAct = b.dataset.vsTab === targetTab;
+        b.classList.toggle('active', isAct);
+        b.setAttribute('aria-selected', isAct ? 'true' : 'false');
+      });
+      document.querySelectorAll('.vs-tab-pane').forEach((pane) => {
+        pane.classList.toggle('active', pane.dataset.vsPane === targetTab);
+      });
+    });
+  });
+
+  const sGap = document.getElementById('vsSectionGap');
+  const iGap = document.getElementById('vsItemGap');
+  const iPad = document.getElementById('vsItemPadY');
+  const tint = document.getElementById('vsTintIntensity');
+
+  const syncFromInputs = () => {
+    current.sectionGap = parseInt(sGap.value, 10);
+    current.itemGap = parseInt(iGap.value, 10);
+    current.itemPadY = parseInt(iPad.value, 10);
+    current.tintIntensity = parseInt(tint.value, 10);
+    document.getElementById('vsValSectionGap').textContent = `${current.sectionGap}px`;
+    document.getElementById('vsValItemGap').textContent = `${current.itemGap}px`;
+    document.getElementById('vsValItemPadY').textContent = `${current.itemPadY}px`;
+    document.getElementById('vsValTint').textContent = `${current.tintIntensity}%`;
+    applyVisualSettings(current);
+    saveVisualSettings(current);
+  };
+
+  [sGap, iGap, iPad, tint].forEach((inp) => inp.addEventListener('input', syncFromInputs));
+
+  document.querySelectorAll('.vs-color-input').forEach((colorInput) => {
+    colorInput.addEventListener('input', () => {
+      const secId = colorInput.dataset.secColor;
+      current.sectionColors[secId] = colorInput.value;
+      const hexSpan = document.querySelector(`[data-sec-hex="${secId}"]`);
+      if (hexSpan) hexSpan.textContent = colorInput.value;
+      applyVisualSettings(current);
+      saveVisualSettings(current);
+    });
+  });
+
+  const vsSoundBtn = document.getElementById('vsSoundToggle');
+  if (vsSoundBtn) {
+    vsSoundBtn.addEventListener('click', () => {
+      const nextState = !isSoundEnabled();
+      setSoundEnabled(nextState);
+      updateSoundToggleButton();
+      vsSoundBtn.classList.toggle('active', nextState);
+      vsSoundBtn.textContent = nextState ? 'Activado' : 'Silenciado';
+      if (nextState) playTaskDoneSound();
+    });
+  }
+
+  document.getElementById('btnVsReset').addEventListener('click', () => {
+    current = JSON.parse(JSON.stringify(DEFAULT_VISUAL_SETTINGS));
+    sGap.value = current.sectionGap;
+    iGap.value = current.itemGap;
+    iPad.value = current.itemPadY;
+    tint.value = current.tintIntensity;
+    document.querySelectorAll('.vs-color-input').forEach((ci) => {
+      const val = current.sectionColors[ci.dataset.secColor] || '#3b82f6';
+      ci.value = val;
+      const hexSpan = document.querySelector(`[data-sec-hex="${ci.dataset.secColor}"]`);
+      if (hexSpan) hexSpan.textContent = val;
+    });
+    syncFromInputs();
+    showToast('Ajustes visuales restaurados', 'info');
+  });
+
+  document.getElementById('btnVsClose').addEventListener('click', closeModal);
+}
 
 function setupCollapsibleSections() {
   const sections = document.querySelectorAll('.collapsible-section');
@@ -741,6 +1033,15 @@ function setupEventListeners() {
   }
   if (el.btnQuickNewWeek) {
     el.btnQuickNewWeek.addEventListener('click', () => executeMenuCommand('next_weekly'));
+  }
+
+  // Botón Ajustes Visuales
+  if (el.btnVisualSettings) {
+    el.btnVisualSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeHamburgerMenu();
+      openVisualSettingsModal();
+    });
   }
 
   // Botón Alternar Sonido
@@ -1648,8 +1949,14 @@ function renderHub(data) {
       chip.className = `day-chip ${day.is_active ? 'active' : ''} ${day.is_today ? 'today' : ''}`;
       const weekdayFallbacks = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
       const weekdayLetter = day.weekday_letter || weekdayFallbacks[data.days.indexOf(day) % 7] || 'L';
+      const noteText = (day.location_note || '').trim();
+      const noteFullLabel = noteText ? `${day.location_emoji || '🏠'}${day.day_number} ${noteText}` : '';
+      const noteIndicatorHtml = noteText
+        ? `<button class="day-note-indicator" type="button" title="${escapeHtml(noteFullLabel)}" aria-label="${escapeHtml(noteFullLabel)}">💬</button>`
+        : '';
       chip.innerHTML = `
         <span class="day-weekday-letter" title="${escapeHtml(day.weekday_name || '')}">${escapeHtml(weekdayLetter)}</span>
+        ${noteIndicatorHtml}
         <button class="day-loc-btn" type="button" title="Cambiar ubicación (${day.location_emoji || '🏠'})" aria-label="Cambiar ubicación">
           <span class="day-loc-emoji">${day.location_emoji || '🏠'}</span>
         </button>
@@ -1657,19 +1964,28 @@ function renderHub(data) {
         <span class="day-badge-count">${day.task_count} tareas</span>
       `;
 
-      // Clic en el chip (fuera del botón de ubicación) selecciona el día activo
+      // Clic en el chip (fuera del botón de ubicación o marca de comentario) selecciona el día activo
       chip.addEventListener('click', (e) => {
-        if (e.target.closest('.day-loc-btn')) return;
+        if (e.target.closest('.day-loc-btn, .day-note-indicator')) return;
         state.activeDayNumber = day.day_number;
         loadHub();
       });
 
-      // Clic en el botón/emoji de ubicación abre el selector de ubicación
+      // Clic en la marca 💬 muestra el detalle "💻19 AWS Event" y permite editarlo
+      const noteBtn = chip.querySelector('.day-note-indicator');
+      if (noteBtn) {
+        noteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleDayNotePopover(day, noteBtn, locBtn || noteBtn);
+        });
+      }
+
+      // Clic en el botón/emoji de ubicación abre el selector de ubicación y aclaración
       const locBtn = chip.querySelector('.day-loc-btn');
       if (locBtn) {
         locBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          toggleLocationPopover(day.day_number, day.location_emoji || '🏠', locBtn);
+          toggleLocationPopover(day.day_number, day.location_emoji || '🏠', locBtn, noteText);
         });
       }
 
@@ -1755,9 +2071,59 @@ function closeLocationPopover() {
   if (existing) {
     existing.remove();
   }
+  const existingNote = document.getElementById('dayNotePopover');
+  if (existingNote) {
+    existingNote.remove();
+  }
 }
 
-function toggleLocationPopover(dayNumber, currentEmoji, anchorEl) {
+function toggleDayNotePopover(day, anchorEl, locAnchorEl) {
+  const existing = document.getElementById('dayNotePopover');
+  if (existing) {
+    const prevDay = existing.dataset.dayNumber;
+    existing.remove();
+    if (prevDay === String(day.day_number)) {
+      return;
+    }
+  }
+  closeLocationPopover();
+
+  const popover = document.createElement('div');
+  popover.id = 'dayNotePopover';
+  popover.className = 'location-popover day-note-popover';
+  popover.dataset.dayNumber = String(day.day_number);
+
+  const label = `${day.location_emoji || '🏠'}${day.day_number} ${(day.location_note || '').trim()}`;
+  popover.innerHTML = `
+    <div class="day-note-popover-row">
+      <span class="day-note-popover-text">${escapeHtml(label)}</span>
+      <button type="button" class="btn-edit-day-note" title="Editar aclaración">✏️</button>
+    </div>
+  `;
+
+  popover.querySelector('.btn-edit-day-note').addEventListener('click', (e) => {
+    e.stopPropagation();
+    popover.remove();
+    toggleLocationPopover(day.day_number, day.location_emoji || '🏠', locAnchorEl || anchorEl, day.location_note || '');
+  });
+
+  document.body.appendChild(popover);
+  const rect = anchorEl.getBoundingClientRect();
+  popover.style.top = `${rect.bottom + 6}px`;
+  popover.style.left = `${rect.left + rect.width / 2}px`;
+  popover.style.transform = 'translateX(-50%)';
+
+  const popoverRect = popover.getBoundingClientRect();
+  if (popoverRect.left < 8) {
+    popover.style.left = '8px';
+    popover.style.transform = 'translateX(0)';
+  } else if (popoverRect.right > window.innerWidth - 8) {
+    popover.style.left = `${window.innerWidth - popoverRect.width - 8}px`;
+    popover.style.transform = 'translateX(0)';
+  }
+}
+
+function toggleLocationPopover(dayNumber, currentEmoji, anchorEl, currentNote = '') {
   const existing = document.getElementById('locationPopover');
   if (existing) {
     const prevDay = existing.dataset.dayNumber;
@@ -1766,6 +2132,7 @@ function toggleLocationPopover(dayNumber, currentEmoji, anchorEl) {
       return;
     }
   }
+  closeLocationPopover();
 
   const popover = document.createElement('div');
   popover.id = 'locationPopover';
@@ -1776,6 +2143,27 @@ function toggleLocationPopover(dayNumber, currentEmoji, anchorEl) {
     <div class="location-popover-header">Ubicación Día ${dayNumber}</div>
   `;
 
+  const saveDayLocation = async (emoji, noteValue) => {
+    closeLocationPopover();
+    try {
+      await fetch(`/api/days/${dayNumber}/location`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vault: state.currentVault,
+          emoji,
+          location_note: (noteValue || '').trim(),
+          year: state.activeYear,
+          week: state.activeWeekNumber
+        })
+      });
+      state.activeDayNumber = dayNumber;
+      await loadHub();
+    } catch (err) {
+      console.error('Error al cambiar ubicación:', err);
+    }
+  };
+
   LOCATION_OPTIONS.forEach((loc) => {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -1784,28 +2172,35 @@ function toggleLocationPopover(dayNumber, currentEmoji, anchorEl) {
       <span class="loc-emoji">${loc.emoji}</span>
       <span class="loc-label">${loc.label}</span>
     `;
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      closeLocationPopover();
-      try {
-        await fetch(`/api/days/${dayNumber}/location`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vault: state.currentVault,
-            emoji: loc.emoji,
-            year: state.activeYear,
-            week: state.activeWeekNumber
-          })
-        });
-        state.activeDayNumber = dayNumber;
-        await loadHub();
-      } catch (err) {
-        console.error('Error al cambiar ubicación:', err);
-      }
+      const noteInputEl = popover.querySelector('.location-note-input');
+      saveDayLocation(loc.emoji, noteInputEl ? noteInputEl.value : currentNote);
     });
     popover.appendChild(btn);
   });
+
+  const noteRow = document.createElement('div');
+  noteRow.className = 'location-note-row';
+  noteRow.innerHTML = `
+    <input type="text" class="location-note-input" placeholder="Aclaración (ej: AWS Event)" value="${escapeHtml(currentNote || '')}" />
+    <button type="button" class="btn-save-loc-note" title="Guardar aclaración">✓</button>
+  `;
+  noteRow.addEventListener('click', (e) => e.stopPropagation());
+  const noteInput = noteRow.querySelector('.location-note-input');
+  const saveNoteBtn = noteRow.querySelector('.btn-save-loc-note');
+  saveNoteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    saveDayLocation(currentEmoji, noteInput.value);
+  });
+  noteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      saveDayLocation(currentEmoji, noteInput.value);
+    }
+  });
+  popover.appendChild(noteRow);
 
   document.body.appendChild(popover);
 
@@ -1823,6 +2218,51 @@ function toggleLocationPopover(dayNumber, currentEmoji, anchorEl) {
     popover.style.left = `${window.innerWidth - popoverRect.width - 8}px`;
     popover.style.transform = 'none';
   }
+}
+
+async function openExternalUrl(url) {
+  if (!url) return;
+  const isGitHubMode = Boolean(
+    window.BracketsGitHubAdapter &&
+    typeof window.BracketsGitHubAdapter.isActive === 'function' &&
+    window.BracketsGitHubAdapter.isActive()
+  );
+  if (!isGitHubMode) {
+    try {
+      const res = await fetch('/api/open-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      if (res.ok) return;
+    } catch (err) {
+      console.warn('Fallback a window.open para URL externa:', err);
+    }
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function renderRichInlineText(text) {
+  if (!text) return '';
+  const definitions = (state.hubData && Array.isArray(state.hubData.definitions)) ? state.hubData.definitions : [];
+  if (definitions.length === 0) return escapeHtml(text);
+
+  const defMap = new Map();
+  definitions.forEach((d) => {
+    if (d && d.id && d.url) {
+      defMap.set(d.id, d);
+    }
+  });
+  if (defMap.size === 0) return escapeHtml(text);
+
+  return String(text).split(/(\[[^\[\]]+\])/g).map((part) => {
+    const def = defMap.get(part);
+    if (def && def.url) {
+      const tooltip = def.title ? `${def.title} (${def.url})` : def.url;
+      return `<a class="inline-def-link" href="${escapeHtml(def.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(tooltip)}">${escapeHtml(part)}</a>`;
+    }
+    return escapeHtml(part);
+  }).join('');
 }
 
 function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumber = null) {
@@ -1846,7 +2286,7 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
       let descHtml = '';
       if (task.description) {
         const lines = task.description.split('\n').filter((l) => l.trim().length > 0);
-        descHtml = `<div class="task-desc-box">${lines.map((l) => `<div class="task-desc-line">💬 ${escapeHtml(l)}</div>`).join('')}</div>`;
+        descHtml = `<div class="task-desc-box">${lines.map((l) => `<div class="task-desc-line">💬 ${renderRichInlineText(l)}</div>`).join('')}</div>`;
       }
 
       const moveTodayBtn = (reorderType === 'week_tasks')
@@ -1859,7 +2299,7 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
           <input type="checkbox" class="task-checkbox" ${task.is_done ? 'checked' : ''}>
           <div class="task-content">
             ${premojiSpan}
-            <span class="task-title">${escapeHtml(task.title)}</span>
+            <span class="task-title">${renderRichInlineText(task.title)}</span>
             ${projSpan}
           </div>
           ${moveTodayBtn}
@@ -1867,6 +2307,14 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
         </div>
         ${descHtml}
       `;
+
+      card.querySelectorAll('a.inline-def-link').forEach((linkEl) => {
+        linkEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openExternalUrl(linkEl.href);
+        });
+      });
 
       const btnMoveToday = card.querySelector('.btn-move-today');
       if (btnMoveToday) {
@@ -1924,7 +2372,14 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
       });
 
       card.onclick = (e) => {
-        if (e.target.closest('.task-checkbox') || e.target.closest('.edit-form-box') || e.target.closest('.drag-handle-item') || e.target.closest('.item-reorder-btns') || e.target.closest('.btn-move-today')) return;
+        if (
+          e.target.closest('.task-checkbox') ||
+          e.target.closest('.edit-form-box') ||
+          e.target.closest('.drag-handle-item') ||
+          e.target.closest('.item-reorder-btns') ||
+          e.target.closest('.btn-move-today') ||
+          e.target.closest('a.inline-def-link')
+        ) return;
         renderEditView();
       };
     }
@@ -1935,13 +2390,21 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
         : task.title;
 
       const days = (state.hubData && state.hubData.days) ? state.hubData.days : [];
-      const currentTarget = task.is_week_task ? 'week' : (task.day_number ? `day:${task.day_number}` : (state.activeDayNumber ? `day:${state.activeDayNumber}` : 'today'));
+      const topics = (state.hubData && Array.isArray(state.hubData.topics)) ? state.hubData.topics : [];
+      const projects = (state.hubData && Array.isArray(state.hubData.projects)) ? state.hubData.projects : [];
+      const effectiveIsWeek = reorderType === 'week_tasks' ? true : Boolean(task.is_week_task);
+      const effectiveDayNum = effectiveIsWeek ? null : (task.day_number || dayNumber || state.activeDayNumber || null);
 
-      let targetOpts = `<option value="week" ${task.is_week_task ? 'selected' : ''}>⏳ Tarea Semana</option>`;
+      let targetOpts = `<option value="week" ${effectiveIsWeek ? 'selected' : ''}>⏳ Tarea Semana</option>`;
       days.forEach((d) => {
-        const isSel = (!task.is_week_task && task.day_number === d.day_number);
+        const isSel = (!effectiveIsWeek && effectiveDayNum === d.day_number);
         targetOpts += `<option value="day:${d.day_number}" ${isSel ? 'selected' : ''}>${d.location_emoji || '📅'} Día ${d.day_number}</option>`;
       });
+
+      const assocOpts = buildAssociationOptionsHtml(topics, projects, task.topic_id || null, task.project_id || null);
+      const ttlOpts = buildTtlOptionsHtml(task.rollover_ttl_weeks);
+      const isCurrentlyDone = task.status === 'done' || task.is_done;
+      const completedDateVal = task.completed_at || getTodayIsoDate();
 
       card.innerHTML = `
         <div class="edit-form-box">
@@ -1952,11 +2415,21 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
               <select class="edit-select edit-task-target">
                 ${targetOpts}
               </select>
+              <select class="edit-select edit-task-assoc" title="Topic semanal o Proyecto">
+                ${assocOpts}
+              </select>
+              <select class="edit-select edit-task-ttl" title="Caducidad en arrastre semanal">
+                ${ttlOpts}
+              </select>
               <select class="edit-select edit-task-status">
                 <option value="pending" ${task.status === 'pending' ? 'selected' : ''}>[ ] Pendiente</option>
                 <option value="done" ${task.status === 'done' ? 'selected' : ''}>[x] Hecha</option>
                 <option value="cancelled" ${task.status === 'cancelled' ? 'selected' : ''}>[~] Cancelada</option>
               </select>
+              <label class="edit-date-wrap ${isCurrentlyDone ? '' : 'hidden'}">
+                <span class="edit-date-label">Resuelta:</span>
+                <input class="edit-input edit-date-input edit-task-completed-at" type="date" value="${escapeHtml(completedDateVal)}">
+              </label>
             </div>
             <div class="edit-actions-right">
               <button class="btn-edit-save btn-save-task" type="button">Guardar ✓</button>
@@ -1970,10 +2443,22 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
       const inputTitle = card.querySelector('.edit-task-title');
       const inputDesc = card.querySelector('.edit-task-desc');
       const selectTarget = card.querySelector('.edit-task-target');
+      const selectAssoc = card.querySelector('.edit-task-assoc');
+      const selectTtl = card.querySelector('.edit-task-ttl');
       const selectStatus = card.querySelector('.edit-task-status');
+      const dateWrap = card.querySelector('.edit-date-wrap');
+      const inputCompletedAt = card.querySelector('.edit-task-completed-at');
       const btnSave = card.querySelector('.btn-save-task');
       const btnCancel = card.querySelector('.btn-cancel-task');
       const btnDelete = card.querySelector('.btn-delete-task');
+
+      selectStatus.addEventListener('change', () => {
+        const showDate = selectStatus.value === 'done';
+        dateWrap.classList.toggle('hidden', !showDate);
+        if (showDate && !inputCompletedAt.value) {
+          inputCompletedAt.value = getTodayIsoDate();
+        }
+      });
 
       attachDefinitionAutocomplete(inputTitle);
       attachDefinitionAutocomplete(inputDesc);
@@ -1988,6 +2473,7 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
         if (!wasDone && nowDone) {
           checkAndPlayTaskCompletion(task.id, selectTarget.value === 'week' ? 'week_tasks' : 'today_tasks');
         }
+        const assoc = parseAssociationValue(selectAssoc.value);
         btnSave.disabled = true;
         try {
           const res = await fetch(`/api/tasks/${task.id}`, {
@@ -1999,6 +2485,10 @@ function renderTaskList(container, tasks, emptyMsg, reorderType = null, dayNumbe
               description: inputDesc.value.trim() || null,
               target: selectTarget.value,
               status: selectStatus.value,
+              topic_id: assoc.topic_id,
+              project_id: assoc.project_id === null ? '' : assoc.project_id,
+              completed_at: nowDone ? (inputCompletedAt.value || getTodayIsoDate()) : null,
+              rollover_ttl_weeks: parseTtlValue(selectTtl.value),
               year: state.activeYear,
               week: state.activeWeekNumber
             })
@@ -2427,12 +2917,16 @@ function renderTopicsList(topics) {
       const fullTitle = topic.project_id && topic.project_id !== 'GENERAL' && !topic.title.includes(topic.project_id)
         ? `${topic.title} #[${topic.project_id}]`
         : topic.title;
+      const projects = (state.hubData && Array.isArray(state.hubData.projects)) ? state.hubData.projects : [];
+      const projOpts = buildProjectOnlyOptionsHtml(projects, topic.project_id || null);
 
       card.innerHTML = `
         <div class="edit-form-box">
           <input class="edit-input edit-topic-title" type="text" value="${escapeHtml(fullTitle)}" placeholder="Título del topic (ej: Core Engine #[Core])">
           <div class="edit-actions-row">
-            <div class="edit-actions-left"></div>
+            <div class="edit-actions-left">
+              <select class="edit-select edit-topic-project" title="Proyecto del topic">${projOpts}</select>
+            </div>
             <div class="edit-actions-right">
               <button class="btn-edit-save btn-save-topic" type="button">Guardar ✓</button>
               <button class="btn-edit-cancel btn-cancel-topic" type="button">Cancelar ✕</button>
@@ -2443,6 +2937,7 @@ function renderTopicsList(topics) {
       `;
 
       const inputTitle = card.querySelector('.edit-topic-title');
+      const selectProject = card.querySelector('.edit-topic-project');
       const btnSave = card.querySelector('.btn-save-topic');
       const btnCancel = card.querySelector('.btn-cancel-topic');
       const btnDelete = card.querySelector('.btn-delete-topic');
@@ -2462,6 +2957,7 @@ function renderTopicsList(topics) {
             body: JSON.stringify({
               vault: state.currentVault,
               title: newTitle,
+              project_id: selectProject.value || null,
               year: state.activeYear,
               week: state.activeWeekNumber
             })
@@ -2531,8 +3027,9 @@ function showToast(message, type = 'info') {
   }, 3200);
 }
 
-function openModal(title, htmlContent) {
+function openModal(title, htmlContent, options = {}) {
   if (!el.appModalOverlay || !el.modalTitle || !el.modalBody) return;
+  el.appModalOverlay.classList.toggle('vs-settings-overlay', options.variant === 'floating-settings');
   el.modalTitle.textContent = title;
   el.modalBody.innerHTML = htmlContent;
   el.appModalOverlay.style.display = 'flex';
@@ -2540,6 +3037,7 @@ function openModal(title, htmlContent) {
 
 function closeModal() {
   if (el.appModalOverlay) {
+    el.appModalOverlay.classList.remove('vs-settings-overlay');
     el.appModalOverlay.style.display = 'none';
   }
 }
@@ -2562,41 +3060,331 @@ function closeHamburgerMenu() {
   if (el.btnHamburger) el.btnHamburger.setAttribute('aria-expanded', 'false');
 }
 
+const MENU_COMMAND_META = {
+  next_weekly: { desc: 'Crea la siguiente semana arrastrando pendientes e inyectando recurrentes', action: 'Crear →' },
+  switch_week: { desc: 'Navega a cualquier otra bitácora semanal disponible en el vault', action: 'Cambiar →' },
+  add_extra_day: { desc: 'Añade un día extra o de guardia/intervención a la semana actual', action: 'Añadir →' },
+  sync_current_week: { desc: 'Reconcilia cambios entre el archivo .md y las tablas YAML de esta semana', action: 'Sincronizar ↻' },
+  sync_all_weeks: { desc: 'Escanea e importa todas las bitácoras semanales del vault hacia YAML', action: 'Ejecutar ↻' },
+  apply_recurring: { desc: 'Inyecta las tareas y reuniones recurrentes correspondientes a esta semana', action: 'Inyectar ⚡' },
+  manage_recurring: { desc: 'Configura tus reuniones fijas (L-V) y tareas periódicas', action: 'Gestionar →' },
+  apply_calendar: { desc: 'Reaplica el patrón de oficina/teletrabajo, festivos y vacaciones', action: 'Aplicar 📆' },
+  projects_overview: { desc: 'Consulta métricas globales por proyecto y da de alta nuevos proyectos', action: 'Abrir →' },
+  backlog_manager: { desc: 'Explora tareas pendientes sin fecha y agéndalas en tu semana', action: 'Abrir →' },
+  ideas_manager: { desc: 'Captura y clasifica ideas de mejora asociadas a tus proyectos', action: 'Abrir →' },
+  schedule_week_to_today: { desc: 'Pasa tareas pendientes de la semana directamente al día activo', action: 'Agendar →' },
+  consolidate_month: { desc: 'Genera el resumen ejecutivo mensual ([YYYY][MM].md)', action: 'Consolidar →' },
+  consolidate_year: { desc: 'Genera el resumen ejecutivo anual ([YYYY].md)', action: 'Consolidar →' },
+  pomodoro_timer: { desc: 'Abre el temporizador Pomodoro flotante vinculado a tus tareas', action: 'Iniciar 🍅' },
+  work_calendar: { desc: 'Edita tu patrón semanal (L-V), días festivos y vacaciones', action: 'Configurar →' },
+  toggle_all_sections: { desc: 'Expande o colapsa todas las secciones del Hub de un vistazo', action: 'Alternar ↕️' }
+};
+
+const MENU_GROUP_SUBTITLES = {
+  bitacoras: 'Creación y navegación de bitácoras semanales',
+  sync_recurring: 'Sincronización Markdown ↔ YAML y tareas periódicas',
+  projects_backlog: 'Gestión de proyectos, backlog e ideas',
+  consolidation: 'Resúmenes ejecutivos mensuales y anuales',
+  tools: 'Utilidades de productividad y calendario laboral'
+};
+
+function splitLeadingEmoji(text, fallbackEmoji = '⚙️') {
+  const str = String(text || '').trim();
+  const match = str.match(/^(\S+)\s+(.*)$/);
+  if (match && /[^\w\sÁÉÍÓÚáéíóúñÑ]/.test(match[1])) {
+    return { icon: match[1], label: match[2].trim() };
+  }
+  return { icon: fallbackEmoji, label: str };
+}
+
 function renderHamburgerMenu(groups) {
-  if (!el.hamburgerMenuContent || !Array.isArray(groups) || groups.length === 0) return;
-  const jsonKey = JSON.stringify(groups);
-  if (jsonKey === lastRenderedMenuJson) return;
-  lastRenderedMenuJson = jsonKey;
+  if (!el.hamburgerMenuContent) return;
+  const validGroups = Array.isArray(groups) && groups.length > 0 ? groups : [];
+  lastRenderedMenuJson = JSON.stringify(validGroups);
 
-  el.hamburgerMenuContent.innerHTML = '';
-  groups.forEach((group) => {
-    const groupDiv = document.createElement('div');
-    groupDiv.className = 'hamburger-group';
-    groupDiv.dataset.groupId = group.id;
+  let current = loadVisualSettings();
+  const sectionLabels = [
+    { id: 'today-tasks', label: 'Tareas de Hoy', desc: 'Panel principal de tareas del día activo', icon: '📋' },
+    { id: 'week-topics', label: 'Topics de la Semana', desc: 'Frentes y objetivos semanales por proyecto', icon: '🎯' },
+    { id: 'week-tasks', label: 'Tareas de la Semana', desc: 'Pendientes semanales sin día fijo asignado', icon: '⏳' },
+    { id: 'week-notes', label: 'Notas de la Semana', desc: 'Apuntes y acuerdos registrados en la semana', icon: '📝' },
+    { id: 'week-definitions', label: 'Definiciones y Enlaces', desc: 'Tickets Jira y referencias rápidas', icon: '🎫' }
+  ];
 
-    const title = document.createElement('div');
-    title.className = 'hamburger-group-title';
-    title.textContent = group.label;
-    groupDiv.appendChild(title);
+  const colorsHtml = sectionLabels.map((s) => {
+    const hex = current.sectionColors[s.id] || '#3b82f6';
+    return `
+      <div class="vs-setting-row">
+        <div class="vs-setting-info">
+          <div class="vs-setting-name">${s.icon} ${s.label}</div>
+          <div class="vs-setting-desc">${s.desc}</div>
+        </div>
+        <label class="vs-color-pill" title="Elegir color">
+          <span class="vs-color-hex" data-sec-hex="${s.id}">${escapeHtml(hex)}</span>
+          <input type="color" class="vs-color-input" data-sec-color="${s.id}" value="${escapeHtml(hex)}">
+        </label>
+      </div>
+    `;
+  }).join('');
 
-    (group.items || []).forEach((item) => {
-      if (item.command === 'set_weight') return; // Omitir peso en notas generales/trabajo
+  const soundOn = isSoundEnabled();
 
-      const itemBtn = document.createElement('button');
-      itemBtn.type = 'button';
-      itemBtn.className = 'hamburger-item-btn';
-      itemBtn.dataset.command = item.command;
-      itemBtn.innerHTML = `<span>${escapeHtml(item.label)}</span>`;
-      itemBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeHamburgerMenu();
-        executeMenuCommand(item.command);
+  const navButtonsHtml = validGroups.map((g, idx) => {
+    const parsed = splitLeadingEmoji(g.label, '📁');
+    return `
+      <button type="button" class="vs-nav-item ${idx === 0 ? 'active' : ''}" data-menu-tab="grp-${escapeHtml(g.id)}" role="tab" aria-selected="${idx === 0 ? 'true' : 'false'}">
+        <span class="vs-nav-icon">${escapeHtml(parsed.icon)}</span>
+        <span>${escapeHtml(parsed.label)}</span>
+      </button>
+    `;
+  }).join('');
+
+  const groupPanesHtml = validGroups.map((g, idx) => {
+    const parsedGroup = splitLeadingEmoji(g.label, '📁');
+    const sub = MENU_GROUP_SUBTITLES[g.id] || 'Acciones y herramientas del sistema';
+    const itemsHtml = (g.items || [])
+      .filter((item) => item.command !== 'set_weight')
+      .map((item) => {
+        const parsedItem = splitLeadingEmoji(item.label, '▸');
+        const meta = MENU_COMMAND_META[item.command] || { desc: 'Ejecutar acción en el vault activo', action: 'Abrir →' };
+        return `
+          <div class="vs-setting-row vs-action-row" data-command="${escapeHtml(item.command)}" role="button" tabindex="0">
+            <div class="vs-setting-info">
+              <div class="vs-setting-name">${escapeHtml(parsedItem.icon)} ${escapeHtml(parsedItem.label)}</div>
+              <div class="vs-setting-desc">${escapeHtml(meta.desc)}</div>
+            </div>
+            <span class="vs-action-pill">${escapeHtml(meta.action)}</span>
+          </div>
+        `;
+      }).join('');
+
+    return `
+      <div class="vs-tab-pane ${idx === 0 ? 'active' : ''}" data-menu-pane="grp-${escapeHtml(g.id)}">
+        <div class="vs-pane-header">
+          <div class="vs-pane-title">${escapeHtml(parsedGroup.icon)} ${escapeHtml(parsedGroup.label)}</div>
+          <div class="vs-pane-sub">${escapeHtml(sub)}</div>
+        </div>
+        <div class="vs-actions-list">
+          ${itemsHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const defaultVisualActive = validGroups.length === 0 ? 'active' : '';
+
+  el.hamburgerMenuContent.innerHTML = `
+    <div class="vs-shell menu-unified-shell">
+      <aside class="vs-sidebar" role="tablist" aria-label="Secciones del menú">
+        ${navButtonsHtml}
+        <div class="vs-nav-divider">Apariencia y App</div>
+        <button type="button" class="vs-nav-item ${defaultVisualActive}" data-menu-tab="vs-spacing" role="tab" aria-selected="${validGroups.length === 0 ? 'true' : 'false'}">
+          <span class="vs-nav-icon">📐</span>
+          <span>Espaciado</span>
+        </button>
+        <button type="button" class="vs-nav-item" data-menu-tab="vs-colors" role="tab" aria-selected="false">
+          <span class="vs-nav-icon">🎨</span>
+          <span>Colores</span>
+        </button>
+        <button type="button" class="vs-nav-item" data-menu-tab="vs-general" role="tab" aria-selected="false">
+          <span class="vs-nav-icon">🔊</span>
+          <span>Sonido</span>
+        </button>
+      </aside>
+
+      <div class="vs-content">
+        ${groupPanesHtml}
+
+        <div class="vs-tab-pane ${defaultVisualActive}" data-menu-pane="vs-spacing">
+          <div class="vs-pane-header">
+            <div class="vs-pane-title">📐 Densidad y Espaciado</div>
+            <div class="vs-pane-sub">Ajusta los márgenes en tiempo real sobre el Hub</div>
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Separación entre secciones</div>
+                <div class="vs-setting-desc">Espacio vertical entre los paneles principales</div>
+              </div>
+              <span id="drawerValSectionGap" class="vs-value-pill">${current.sectionGap}px</span>
+            </div>
+            <input id="drawerSectionGap" class="vs-range" type="range" min="0" max="24" step="1" value="${current.sectionGap}">
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Separación entre elementos</div>
+                <div class="vs-setting-desc">Distancia entre tarjetas dentro de cada sección</div>
+              </div>
+              <span id="drawerValItemGap" class="vs-value-pill">${current.itemGap}px</span>
+            </div>
+            <input id="drawerItemGap" class="vs-range" type="range" min="0" max="12" step="1" value="${current.itemGap}">
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Padding vertical en tarjetas</div>
+                <div class="vs-setting-desc">Relleno interior arriba y abajo de cada elemento</div>
+              </div>
+              <span id="drawerValItemPadY" class="vs-value-pill">${current.itemPadY}px</span>
+            </div>
+            <input id="drawerItemPadY" class="vs-range" type="range" min="1" max="12" step="1" value="${current.itemPadY}">
+          </div>
+
+          <div class="vs-inline-reset-row">
+            <button id="btnDrawerResetSpacing" class="btn-edit-cancel" type="button">↺ Restaurar valores por defecto</button>
+          </div>
+        </div>
+
+        <div class="vs-tab-pane" data-menu-pane="vs-colors">
+          <div class="vs-pane-header">
+            <div class="vs-pane-title">🎨 Colores de Secciones</div>
+            <div class="vs-pane-sub">Tintes sutiles translúcidos para distinguir cada bloque</div>
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Intensidad del tinte</div>
+                <div class="vs-setting-desc">Opacidad del degradado de fondo (0% = neutro)</div>
+              </div>
+              <span id="drawerValTint" class="vs-value-pill">${current.tintIntensity}%</span>
+            </div>
+            <input id="drawerTintIntensity" class="vs-range" type="range" min="0" max="25" step="1" value="${current.tintIntensity}">
+          </div>
+
+          <div class="vs-colors-list">
+            ${colorsHtml}
+          </div>
+
+          <div class="vs-inline-reset-row">
+            <button id="btnDrawerResetColors" class="btn-edit-cancel" type="button">↺ Restaurar colores por defecto</button>
+          </div>
+        </div>
+
+        <div class="vs-tab-pane" data-menu-pane="vs-general">
+          <div class="vs-pane-header">
+            <div class="vs-pane-title">🔊 Sonido y General</div>
+            <div class="vs-pane-sub">Comportamiento local de la aplicación</div>
+          </div>
+
+          <div class="vs-setting-row">
+            <div class="vs-setting-info">
+              <div class="vs-setting-name">Efectos de sonido</div>
+              <div class="vs-setting-desc">Sonido sutil al completar tareas</div>
+            </div>
+            <button id="drawerSoundToggleBtn" type="button" class="vs-toggle-btn ${soundOn ? 'active' : ''}">
+              ${soundOn ? '🔊 Activado' : '🔇 Silenciado'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Cambio de categoría en el sidebar del menú
+  el.hamburgerMenuContent.querySelectorAll('.vs-nav-item').forEach((navBtn) => {
+    navBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = navBtn.dataset.menuTab;
+      el.hamburgerMenuContent.querySelectorAll('.vs-nav-item').forEach((b) => {
+        const isAct = b.dataset.menuTab === target;
+        b.classList.toggle('active', isAct);
+        b.setAttribute('aria-selected', isAct ? 'true' : 'false');
       });
-      groupDiv.appendChild(itemBtn);
+      el.hamburgerMenuContent.querySelectorAll('.vs-tab-pane').forEach((pane) => {
+        pane.classList.toggle('active', pane.dataset.menuPane === target);
+      });
     });
-
-    el.hamburgerMenuContent.appendChild(groupDiv);
   });
+
+  // Ejecución de comandos de Brackets
+  el.hamburgerMenuContent.querySelectorAll('.vs-action-row').forEach((row) => {
+    const runCmd = (e) => {
+      e.stopPropagation();
+      const cmd = row.dataset.command;
+      closeHamburgerMenu();
+      executeMenuCommand(cmd);
+    };
+    row.addEventListener('click', runCmd);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        runCmd(e);
+      }
+    });
+  });
+
+  // Controles de espaciado y colores integrados en el menú
+  const sGap = document.getElementById('drawerSectionGap');
+  const iGap = document.getElementById('drawerItemGap');
+  const iPad = document.getElementById('drawerItemPadY');
+  const tint = document.getElementById('drawerTintIntensity');
+
+  const syncDrawerVisuals = () => {
+    current.sectionGap = parseInt(sGap.value, 10);
+    current.itemGap = parseInt(iGap.value, 10);
+    current.itemPadY = parseInt(iPad.value, 10);
+    current.tintIntensity = parseInt(tint.value, 10);
+    document.getElementById('drawerValSectionGap').textContent = `${current.sectionGap}px`;
+    document.getElementById('drawerValItemGap').textContent = `${current.itemGap}px`;
+    document.getElementById('drawerValItemPadY').textContent = `${current.itemPadY}px`;
+    document.getElementById('drawerValTint').textContent = `${current.tintIntensity}%`;
+    applyVisualSettings(current);
+    saveVisualSettings(current);
+  };
+
+  [sGap, iGap, iPad, tint].forEach((inp) => {
+    if (inp) inp.addEventListener('input', syncDrawerVisuals);
+  });
+
+  el.hamburgerMenuContent.querySelectorAll('.vs-color-input').forEach((colorInput) => {
+    colorInput.addEventListener('input', () => {
+      const secId = colorInput.dataset.secColor;
+      current.sectionColors[secId] = colorInput.value;
+      const hexSpan = el.hamburgerMenuContent.querySelector(`[data-sec-hex="${secId}"]`);
+      if (hexSpan) hexSpan.textContent = colorInput.value;
+      applyVisualSettings(current);
+      saveVisualSettings(current);
+    });
+  });
+
+  const resetAllVisuals = () => {
+    current = JSON.parse(JSON.stringify(DEFAULT_VISUAL_SETTINGS));
+    if (sGap) sGap.value = current.sectionGap;
+    if (iGap) iGap.value = current.itemGap;
+    if (iPad) iPad.value = current.itemPadY;
+    if (tint) tint.value = current.tintIntensity;
+    el.hamburgerMenuContent.querySelectorAll('.vs-color-input').forEach((ci) => {
+      const val = current.sectionColors[ci.dataset.secColor] || '#3b82f6';
+      ci.value = val;
+      const hexSpan = el.hamburgerMenuContent.querySelector(`[data-sec-hex="${ci.dataset.secColor}"]`);
+      if (hexSpan) hexSpan.textContent = val;
+    });
+    syncDrawerVisuals();
+    showToast('Ajustes visuales restaurados', 'info');
+  };
+
+  const btnResetSpacing = document.getElementById('btnDrawerResetSpacing');
+  const btnResetColors = document.getElementById('btnDrawerResetColors');
+  if (btnResetSpacing) btnResetSpacing.addEventListener('click', resetAllVisuals);
+  if (btnResetColors) btnResetColors.addEventListener('click', resetAllVisuals);
+
+  const drawerSoundBtn = document.getElementById('drawerSoundToggleBtn');
+  if (drawerSoundBtn) {
+    drawerSoundBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nextState = !isSoundEnabled();
+      setSoundEnabled(nextState);
+      updateSoundToggleButton();
+      drawerSoundBtn.classList.toggle('active', nextState);
+      drawerSoundBtn.textContent = nextState ? '🔊 Activado' : '🔇 Silenciado';
+      if (nextState) playTaskDoneSound();
+    });
+  }
 }
 
 // Alias para compatibilidad
@@ -4182,7 +4970,94 @@ function setupFabMenu() {
   });
 }
 
-function openFabQuickCreateModal(actionType) {
+function getTodayIsoDate() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+async function fetchVaultProjectsList() {
+  if (state.hubData && Array.isArray(state.hubData.projects) && state.hubData.projects.length > 0) {
+    return state.hubData.projects;
+  }
+  try {
+    const res = await fetch(`/api/projects?vault=${encodeURIComponent(state.currentVault || '')}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.projects) ? data.projects : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function buildProjectOnlyOptionsHtml(projects, selectedProjectId = null) {
+  let html = '<option value="">📁 Proyecto (opcional o #[TAG])</option>';
+  (projects || []).forEach((p) => {
+    if (!p || !p.id) return;
+    const label = p.name && p.name !== p.id ? `${p.id} — ${p.name}` : p.id;
+    const sel = selectedProjectId && selectedProjectId === p.id ? 'selected' : '';
+    html += `<option value="${escapeHtml(p.id)}" ${sel}>📁 ${escapeHtml(label)}</option>`;
+  });
+  return html;
+}
+
+function buildAssociationOptionsHtml(topics, projects, selectedTopicId = null, selectedProjectId = null) {
+  let html = '<option value="">🔗 Topic o Proyecto (opcional)</option>';
+
+  const topicList = Array.isArray(topics) ? topics : [];
+  if (topicList.length > 0) {
+    html += '<optgroup label="🎯 Topics de la semana">';
+    topicList.forEach((t) => {
+      if (!t || !t.id) return;
+      const projSuffix = t.project_id ? ` [${t.project_id}]` : '';
+      const sel = selectedTopicId && selectedTopicId === t.id ? 'selected' : '';
+      html += `<option value="topic:${escapeHtml(t.id)}" ${sel}>🎯 ${escapeHtml(t.title)}${escapeHtml(projSuffix)}</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  const projList = Array.isArray(projects) ? projects : [];
+  if (projList.length > 0) {
+    html += '<optgroup label="📁 Proyectos">';
+    projList.forEach((p) => {
+      if (!p || !p.id) return;
+      const label = p.name && p.name !== p.id ? `${p.id} — ${p.name}` : p.id;
+      const sel = !selectedTopicId && selectedProjectId && selectedProjectId === p.id ? 'selected' : '';
+      html += `<option value="project:${escapeHtml(p.id)}" ${sel}>📁 ${escapeHtml(label)}</option>`;
+    });
+    html += '</optgroup>';
+  }
+
+  return html;
+}
+
+function parseAssociationValue(val) {
+  if (!val) return { topic_id: null, project_id: null };
+  if (val.startsWith('topic:')) return { topic_id: val.slice(6), project_id: null };
+  if (val.startsWith('project:')) return { topic_id: null, project_id: val.slice(8) };
+  return { topic_id: null, project_id: null };
+}
+
+function buildTtlOptionsHtml(currentTtl = null) {
+  const valStr = currentTtl === null || currentTtl === undefined ? '' : String(currentTtl);
+  return `
+    <option value="" ${valStr === '' ? 'selected' : ''}>⏳ Caduca: 2 semanas (defecto)</option>
+    <option value="0" ${valStr === '0' ? 'selected' : ''}>♾️ Sin caducidad (siempre se traslada)</option>
+    <option value="1" ${valStr === '1' ? 'selected' : ''}>⏳ 1 semana</option>
+    <option value="3" ${valStr === '3' ? 'selected' : ''}>⏳ 3 semanas</option>
+    <option value="4" ${valStr === '4' ? 'selected' : ''}>⏳ 4 semanas</option>
+  `;
+}
+
+function parseTtlValue(val) {
+  if (val === '' || val === null || val === undefined) return null;
+  const parsed = parseInt(val, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+async function openFabQuickCreateModal(actionType) {
   if (actionType === 'today_task' || actionType === 'week_task') {
     const isWeek = actionType === 'week_task';
     const days = (state.hubData && state.hubData.days) ? state.hubData.days : [];
@@ -4194,6 +5069,11 @@ function openFabQuickCreateModal(actionType) {
       targetOpts += `<option value="day:${d.day_number}" ${isSel ? 'selected' : ''}>${d.location_emoji || '📅'} Día ${d.day_number} (${d.weekday_name || ''})</option>`;
     });
 
+    const projects = await fetchVaultProjectsList();
+    const topics = (state.hubData && Array.isArray(state.hubData.topics)) ? state.hubData.topics : [];
+    const assocOpts = buildAssociationOptionsHtml(topics, projects);
+    const ttlOpts = buildTtlOptionsHtml(null);
+
     openModal(isWeek ? '⏳ Nueva Tarea de la Semana' : '📋 Nueva Tarea de Hoy', `
       <div class="edit-form-box">
         <input id="fabTaskTitle" class="edit-input" type="text" placeholder="Título... (ej: Reunión: Sync #[PROYECTO] o escribe [ )" autocomplete="off">
@@ -4201,7 +5081,13 @@ function openFabQuickCreateModal(actionType) {
         <div class="edit-actions-row">
           <div class="edit-actions-left">
             <select id="fabTaskTarget" class="edit-select">${targetOpts}</select>
+            <select id="fabTaskAssoc" class="edit-select" title="Topic semanal o Proyecto">${assocOpts}</select>
+            <select id="fabTaskTtl" class="edit-select" title="Caducidad en arrastre semanal">${ttlOpts}</select>
             <button id="fabTaskStatusBtn" type="button" class="btn-status-pill">Pendiente [ ]</button>
+            <label id="fabTaskDateWrap" class="edit-date-wrap hidden">
+              <span class="edit-date-label">Resuelta:</span>
+              <input id="fabTaskCompletedAt" type="date" class="edit-input edit-date-input" value="${getTodayIsoDate()}">
+            </label>
           </div>
           <div class="edit-actions-right">
             <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
@@ -4214,7 +5100,11 @@ function openFabQuickCreateModal(actionType) {
     const titleInput = document.getElementById('fabTaskTitle');
     const descInput = document.getElementById('fabTaskDesc');
     const targetSelect = document.getElementById('fabTaskTarget');
+    const assocSelect = document.getElementById('fabTaskAssoc');
+    const ttlSelect = document.getElementById('fabTaskTtl');
     const statusBtn = document.getElementById('fabTaskStatusBtn');
+    const dateWrap = document.getElementById('fabTaskDateWrap');
+    const completedAtInput = document.getElementById('fabTaskCompletedAt');
     const btnSave = document.getElementById('btnFabSaveTask');
     const btnCancel = document.getElementById('btnFabCancel');
 
@@ -4223,6 +5113,7 @@ function openFabQuickCreateModal(actionType) {
       isDone = !isDone;
       statusBtn.textContent = isDone ? '✓ Hecha [x]' : 'Pendiente [ ]';
       statusBtn.classList.toggle('done', isDone);
+      dateWrap.classList.toggle('hidden', !isDone);
     });
 
     attachDefinitionAutocomplete(titleInput);
@@ -4235,6 +5126,7 @@ function openFabQuickCreateModal(actionType) {
         titleInput.focus();
         return;
       }
+      const assoc = parseAssociationValue(assocSelect.value);
       btnSave.disabled = true;
       try {
         const res = await fetch('/api/tasks', {
@@ -4245,6 +5137,10 @@ function openFabQuickCreateModal(actionType) {
             title,
             description: descInput.value.trim() || null,
             target: targetSelect.value,
+            topic_id: assoc.topic_id,
+            project_id: assoc.project_id,
+            rollover_ttl_weeks: parseTtlValue(ttlSelect.value),
+            completed_at: isDone ? (completedAtInput.value || getTodayIsoDate()) : null,
             is_done: isDone,
             year: state.activeYear,
             week: state.activeWeekNumber
@@ -4280,11 +5176,16 @@ function openFabQuickCreateModal(actionType) {
   }
 
   if (actionType === 'topic') {
+    const projects = await fetchVaultProjectsList();
+    const projOpts = buildProjectOnlyOptionsHtml(projects);
+
     openModal('🎯 Nuevo Topic de la Semana', `
       <div class="edit-form-box">
         <input id="fabTopicTitle" class="edit-input" type="text" placeholder="Título del topic... (ej: Refactorización Motor #[Core])" autocomplete="off">
         <div class="edit-actions-row">
-          <div class="edit-actions-left"></div>
+          <div class="edit-actions-left">
+            <select id="fabTopicProject" class="edit-select" title="Proyecto del topic">${projOpts}</select>
+          </div>
           <div class="edit-actions-right">
             <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
             <button id="btnFabSaveTopic" class="btn-edit-save" type="button">Crear Topic ✓</button>
@@ -4294,6 +5195,7 @@ function openFabQuickCreateModal(actionType) {
     `);
 
     const titleInput = document.getElementById('fabTopicTitle');
+    const projectSelect = document.getElementById('fabTopicProject');
     const btnSave = document.getElementById('btnFabSaveTopic');
     const btnCancel = document.getElementById('btnFabCancel');
 
@@ -4314,6 +5216,7 @@ function openFabQuickCreateModal(actionType) {
           body: JSON.stringify({
             vault: state.currentVault,
             title,
+            project_id: projectSelect.value || null,
             year: state.activeYear,
             week: state.activeWeekNumber
           })
@@ -4342,12 +5245,18 @@ function openFabQuickCreateModal(actionType) {
   }
 
   if (actionType === 'note') {
+    const projects = await fetchVaultProjectsList();
+    const topics = (state.hubData && Array.isArray(state.hubData.topics)) ? state.hubData.topics : [];
+    const assocOpts = buildAssociationOptionsHtml(topics, projects);
+
     openModal('📝 Nueva Nota de la Semana', `
       <div class="edit-form-box">
         <input id="fabNoteTitle" class="edit-input" type="text" placeholder="Título de la nota... (ej: Acuerdos Sprint #[Proyecto])" autocomplete="off">
         <textarea id="fabNoteContent" class="edit-textarea" rows="4" placeholder="Contenido / viñetas (una por línea)... (Ctrl+Enter para guardar)"></textarea>
         <div class="edit-actions-row">
-          <div class="edit-actions-left"></div>
+          <div class="edit-actions-left">
+            <select id="fabNoteAssoc" class="edit-select" title="Topic semanal o Proyecto">${assocOpts}</select>
+          </div>
           <div class="edit-actions-right">
             <button id="btnFabCancel" class="btn-edit-cancel" type="button">Cancelar</button>
             <button id="btnFabSaveNote" class="btn-edit-save" type="button">Guardar Nota ✓</button>
@@ -4358,6 +5267,7 @@ function openFabQuickCreateModal(actionType) {
 
     const titleInput = document.getElementById('fabNoteTitle');
     const contentInput = document.getElementById('fabNoteContent');
+    const assocSelect = document.getElementById('fabNoteAssoc');
     const btnSave = document.getElementById('btnFabSaveNote');
     const btnCancel = document.getElementById('btnFabCancel');
 
@@ -4373,6 +5283,7 @@ function openFabQuickCreateModal(actionType) {
         titleInput.focus();
         return;
       }
+      const assoc = parseAssociationValue(assocSelect.value);
       btnSave.disabled = true;
       try {
         const res = await fetch('/api/notes', {
@@ -4382,6 +5293,8 @@ function openFabQuickCreateModal(actionType) {
             vault: state.currentVault,
             title,
             content: bullets,
+            topic_id: assoc.topic_id,
+            project_id: assoc.project_id,
             year: state.activeYear,
             week: state.activeWeekNumber
           })
