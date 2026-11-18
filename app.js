@@ -154,6 +154,9 @@ const DEFAULT_VISUAL_SETTINGS = {
   sectionGap: 12,
   itemGap: 4,
   itemPadY: 3,
+  sectionTitleSize: 17,
+  sectionTitlePadY: 4,
+  itemTitleSize: 14,
   tintIntensity: 7,
   sectionColors: {
     'today-tasks': '#3b82f6',
@@ -184,6 +187,9 @@ function loadVisualSettings() {
       sectionGap: Number.isFinite(parsed.sectionGap) ? parsed.sectionGap : DEFAULT_VISUAL_SETTINGS.sectionGap,
       itemGap: Number.isFinite(parsed.itemGap) ? parsed.itemGap : DEFAULT_VISUAL_SETTINGS.itemGap,
       itemPadY: Number.isFinite(parsed.itemPadY) ? parsed.itemPadY : DEFAULT_VISUAL_SETTINGS.itemPadY,
+      sectionTitleSize: Number.isFinite(parsed.sectionTitleSize) ? parsed.sectionTitleSize : DEFAULT_VISUAL_SETTINGS.sectionTitleSize,
+      sectionTitlePadY: Number.isFinite(parsed.sectionTitlePadY) ? parsed.sectionTitlePadY : DEFAULT_VISUAL_SETTINGS.sectionTitlePadY,
+      itemTitleSize: Number.isFinite(parsed.itemTitleSize) ? parsed.itemTitleSize : DEFAULT_VISUAL_SETTINGS.itemTitleSize,
       tintIntensity: Number.isFinite(parsed.tintIntensity) ? parsed.tintIntensity : DEFAULT_VISUAL_SETTINGS.tintIntensity,
       sectionColors: Object.assign({}, DEFAULT_VISUAL_SETTINGS.sectionColors, parsed.sectionColors || {})
     };
@@ -205,6 +211,9 @@ function applyVisualSettings(settings) {
   root.setProperty('--section-gap', `${settings.sectionGap}px`);
   root.setProperty('--item-gap', `${settings.itemGap}px`);
   root.setProperty('--item-pad-y', `${settings.itemPadY}px`);
+  root.setProperty('--section-title-size', `${settings.sectionTitleSize}px`);
+  root.setProperty('--section-title-pad-y', `${settings.sectionTitlePadY}px`);
+  root.setProperty('--item-title-size', `${settings.itemTitleSize}px`);
 
   const topAlpha = Math.max(0, Math.min(0.35, settings.tintIntensity / 100));
   const botAlpha = +(topAlpha * 0.28).toFixed(3);
@@ -3076,7 +3085,9 @@ const MENU_COMMAND_META = {
   consolidate_month: { desc: 'Genera el resumen ejecutivo mensual ([YYYY][MM].md)', action: 'Consolidar →' },
   consolidate_year: { desc: 'Genera el resumen ejecutivo anual ([YYYY].md)', action: 'Consolidar →' },
   pomodoro_timer: { desc: 'Abre el temporizador Pomodoro flotante vinculado a tus tareas', action: 'Iniciar 🍅' },
+  pomodoro_focus: { desc: 'Abre el temporizador Pomodoro flotante vinculado a tus tareas', action: 'Iniciar 🍅' },
   work_calendar: { desc: 'Edita tu patrón semanal (L-V), días festivos y vacaciones', action: 'Configurar →' },
+  github_settings: { desc: 'Configura tu repositorio, token PAT y vaults remotos', action: 'Configurar ☁️' },
   toggle_all_sections: { desc: 'Expande o colapsa todas las secciones del Hub de un vistazo', action: 'Alternar ↕️' }
 };
 
@@ -3234,6 +3245,39 @@ function renderHamburgerMenu(groups) {
             <input id="drawerItemPadY" class="vs-range" type="range" min="1" max="12" step="1" value="${current.itemPadY}">
           </div>
 
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Tamaño de títulos de sección</div>
+                <div class="vs-setting-desc">Tamaño de letra de las cabeceras (Topics, Tareas, Notas...)</div>
+              </div>
+              <span id="drawerValSecTitleSize" class="vs-value-pill">${current.sectionTitleSize}px</span>
+            </div>
+            <input id="drawerSecTitleSize" class="vs-range" type="range" min="13" max="24" step="1" value="${current.sectionTitleSize}">
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Padding vertical en títulos de sección</div>
+                <div class="vs-setting-desc">Altura de la cabecera de cada panel</div>
+              </div>
+              <span id="drawerValSecTitlePadY" class="vs-value-pill">${current.sectionTitlePadY}px</span>
+            </div>
+            <input id="drawerSecTitlePadY" class="vs-range" type="range" min="0" max="14" step="1" value="${current.sectionTitlePadY}">
+          </div>
+
+          <div class="vs-setting-row vs-setting-row-col">
+            <div class="vs-setting-top">
+              <div class="vs-setting-info">
+                <div class="vs-setting-name">Tamaño de letra en elementos</div>
+                <div class="vs-setting-desc">Tamaño de los títulos de tareas, topics y notas</div>
+              </div>
+              <span id="drawerValItemTitleSize" class="vs-value-pill">${current.itemTitleSize}px</span>
+            </div>
+            <input id="drawerItemTitleSize" class="vs-range" type="range" min="11" max="20" step="1" value="${current.itemTitleSize}">
+          </div>
+
           <div class="vs-inline-reset-row">
             <button id="btnDrawerResetSpacing" class="btn-edit-cancel" type="button">↺ Restaurar valores por defecto</button>
           </div>
@@ -3322,22 +3366,31 @@ function renderHamburgerMenu(groups) {
   const sGap = document.getElementById('drawerSectionGap');
   const iGap = document.getElementById('drawerItemGap');
   const iPad = document.getElementById('drawerItemPadY');
+  const stSize = document.getElementById('drawerSecTitleSize');
+  const stPad = document.getElementById('drawerSecTitlePadY');
+  const itSize = document.getElementById('drawerItemTitleSize');
   const tint = document.getElementById('drawerTintIntensity');
 
   const syncDrawerVisuals = () => {
     current.sectionGap = parseInt(sGap.value, 10);
     current.itemGap = parseInt(iGap.value, 10);
     current.itemPadY = parseInt(iPad.value, 10);
+    current.sectionTitleSize = parseInt(stSize.value, 10);
+    current.sectionTitlePadY = parseInt(stPad.value, 10);
+    current.itemTitleSize = parseInt(itSize.value, 10);
     current.tintIntensity = parseInt(tint.value, 10);
     document.getElementById('drawerValSectionGap').textContent = `${current.sectionGap}px`;
     document.getElementById('drawerValItemGap').textContent = `${current.itemGap}px`;
     document.getElementById('drawerValItemPadY').textContent = `${current.itemPadY}px`;
+    document.getElementById('drawerValSecTitleSize').textContent = `${current.sectionTitleSize}px`;
+    document.getElementById('drawerValSecTitlePadY').textContent = `${current.sectionTitlePadY}px`;
+    document.getElementById('drawerValItemTitleSize').textContent = `${current.itemTitleSize}px`;
     document.getElementById('drawerValTint').textContent = `${current.tintIntensity}%`;
     applyVisualSettings(current);
     saveVisualSettings(current);
   };
 
-  [sGap, iGap, iPad, tint].forEach((inp) => {
+  [sGap, iGap, iPad, stSize, stPad, itSize, tint].forEach((inp) => {
     if (inp) inp.addEventListener('input', syncDrawerVisuals);
   });
 
@@ -3357,6 +3410,9 @@ function renderHamburgerMenu(groups) {
     if (sGap) sGap.value = current.sectionGap;
     if (iGap) iGap.value = current.itemGap;
     if (iPad) iPad.value = current.itemPadY;
+    if (stSize) stSize.value = current.sectionTitleSize;
+    if (stPad) stPad.value = current.sectionTitlePadY;
+    if (itSize) itSize.value = current.itemTitleSize;
     if (tint) tint.value = current.tintIntensity;
     el.hamburgerMenuContent.querySelectorAll('.vs-color-input').forEach((ci) => {
       const val = current.sectionColors[ci.dataset.secColor] || '#3b82f6';
