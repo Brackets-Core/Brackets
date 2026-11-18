@@ -789,7 +789,7 @@ body::after {
   align-items: center;
   background: transparent;
   border: none;
-  padding: 4px 6px;
+  padding: var(--section-title-pad-y, 4px) 6px;
   margin: 0;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -837,7 +837,7 @@ body::after {
 }
 
 .section-title {
-  font-size: 1.05rem;
+  font-size: var(--section-title-size, 1.05rem);
   font-weight: 700;
   letter-spacing: -0.01em;
   margin-bottom: 0;
@@ -979,7 +979,7 @@ body::after {
 }
 
 .task-title {
-  font-size: 0.9rem;
+  font-size: var(--item-title-size, 0.9rem);
   color: var(--text-main);
 }
 
@@ -1052,7 +1052,7 @@ body::after {
 
 .note-header {
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: var(--item-title-size, 0.9rem);
   margin-bottom: 2px;
   display: flex;
   align-items: center;
@@ -1273,7 +1273,7 @@ body::after {
 }
 
 .topic-title {
-  font-size: 0.95rem;
+  font-size: var(--item-title-size, 0.95rem);
   font-weight: 500;
   color: var(--text-main);
 }
@@ -2503,6 +2503,7 @@ body::after {
 
 .hamburger-menu-content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   padding: 0;
   display: flex;
@@ -2514,12 +2515,20 @@ body::after {
 }
 
 .menu-unified-shell {
-  min-height: 360px;
-  max-height: calc(82vh - 54px);
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .menu-unified-shell .vs-sidebar {
   width: 196px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.menu-unified-shell .vs-content {
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
 }
 
@@ -3443,19 +3452,89 @@ body::after {
   background: rgba(0, 0, 0, 0.16);
 }
 
+@media (max-width: 680px) and (orientation: portrait) {
+  .hamburger-drawer {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
+
+  .hamburger-drawer-header {
+    padding-top: calc(13px + env(safe-area-inset-top));
+  }
+
+  .menu-unified-shell {
+    flex-direction: column;
+  }
+
+  .menu-unified-shell .vs-sidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-shrink: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 10px;
+  }
+
+  .menu-unified-shell .vs-nav-divider {
+    display: none;
+  }
+
+  .menu-unified-shell .vs-nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .menu-unified-shell .vs-content {
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .hamburger-drawer {
+    width: min(740px, 94vw);
+    max-width: 94vw;
+    max-height: 92dvh;
+  }
+
+  .menu-unified-shell {
+    flex-direction: row;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .menu-unified-shell .vs-sidebar {
+    width: 185px;
+    flex-direction: column;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    border-bottom: none;
+  }
+}
+
 @media (max-width: 560px) {
-  .vs-shell {
+  .vs-shell:not(.menu-unified-shell) {
     flex-direction: column;
     min-height: auto;
   }
-  .vs-sidebar {
+  .vs-shell:not(.menu-unified-shell) .vs-sidebar {
     width: 100%;
     flex-direction: row;
     border-right: none;
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
   }
-  .vs-nav-item {
+  .vs-shell:not(.menu-unified-shell) .vs-nav-item {
     flex: 1;
     justify-content: center;
     padding: 7px 8px;
