@@ -48,9 +48,10 @@
     },
     {
       id: 'projects_backlog',
-      label: '📁 Proyectos e Ideas',
+      label: '📁 Proyectos y Backlog',
       items: [
-        { id: 'projects_overview', label: '📊 Estado de Proyectos en Semana', command: 'projects_overview' },
+        { id: 'projects_overview', label: '📊 Estado Global de Proyectos y Métricas', command: 'projects_overview' },
+        { id: 'backlog_manager', label: '🗂️ Gestionar Backlog (Sin fecha asignada)', command: 'backlog_manager' },
         { id: 'ideas_manager', label: '💡 Gestionar Ideas ([🧩GENERAL]🧠Ideas.md)', command: 'ideas_manager' },
         { id: 'schedule_week_to_today', label: '➡️ Agendar Tarea Semanal a Día Activo', command: 'schedule_week_to_today' }
       ]
@@ -2212,9 +2213,141 @@
         }
       }
 
+      // 12.5 Backlog: GET/POST /api/backlog, POST /api/backlog/schedule
+      if (pathname === '/api/backlog' || pathname === '/api/backlog/schedule') {
+        const backlogFile = '[📋PROJECTS]✅BackLog.md';
+
+        const parseBacklogMd = (mdText) => {
+          const items = [];
+          let curProj = 'GENERAL';
+          (mdText || '').split(/\r?\n/).forEach((line, idx) => {
+            const s = line.trim();
+            if (s.startsWith('## ')) {
+              curProj = s.replace(/^##\s*📁?\s*/, '').trim() || 'GENERAL';
+              return;
+            }
+            const m = s.match(/^-\s*\[\s\]\s*(.*)$/);
+            if (m && m[1].trim()) {
+              items.push({
+                id: `BL-${idx + 1}`,
+                lineIndex: idx,
+                title: m[1].trim(),
+                project_id: curProj,
+                premoji: '📋',
+                status: 'pending'
+              });
+            }
+          });
+          return items;
+        };
+
+        if (pathname === '/api/backlog' && method === 'GET') {
+          try {
+            const f = await GitHubRestClient.getFile(vault, backlogFile);
+            return { backlog_tasks: parseBacklogMd(f.content) };
+          } catch (e) {
+            return { backlog_tasks: [] };
+          }
+        }
+
+        if (pathname === '/api/backlog' && method === 'POST') {
+          let rawTitle = (bodyObj.title || '').trim();
+          if (!rawTitle) return { success: false, error: 'El título es obligatorio' };
+          let proj = (bodyObj.project_id || '').trim();
+          const tagMatch = rawTitle.match(/#\[([A-Za-z0-9_-]+)\]/);
+          if (tagMatch) {
+            if (!proj) proj = tagMatch[1].trim();
+            rawTitle = rawTitle.replace(tagMatch[0], '').trim();
+          }
+          proj = proj || 'GENERAL';
+
+          let currentMd = '# ✅BackLog de Proyectos\n\n## 📁 GENERAL\n';
+          try {
+            const f = await GitHubRestClient.getFile(vault, backlogFile);
+            currentMd = f.content;
+          } catch (_) {}
+
+          const lines = currentMd.split(/\r?\n/);
+          const headerRegex = new RegExp(`^##\\s*📁?\\s*${proj.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+          const headerIdx = lines.findIndex((l) => headerRegex.test(l.trim()));
+          const newLine = `- [ ] ${rawTitle}`;
+
+          if (headerIdx >= 0) {
+            let insertAt = headerIdx + 1;
+            while (insertAt < lines.length && !lines[insertAt].trim().startsWith('## ')) {
+              insertAt++;
+            }
+            while (insertAt > headerIdx + 1 && !lines[insertAt - 1].trim()) {
+              insertAt--;
+            }
+            lines.splice(insertAt, 0, newLine);
+          } else {
+            if (lines.length && lines[lines.length - 1].trim()) lines.push('');
+            lines.push(`## 📁 ${proj}`, newLine);
+          }
+
+          await GitHubRestClient.putFile(vault, backlogFile, lines.join('\n'), `feat(backlog): add "${rawTitle}" [${proj}]`);
+          return { success: true, task: { id: `BL-${Date.now()}`, title: rawTitle, project_id: proj, status: 'pending' } };
+        }
+
+        if (pathname === '/api/backlog/schedule' && method === 'POST') {
+          const f = await GitHubRestClient.getFile(vault, backlogFile);
+          const items = parseBacklogMd(f.content);
+          const targetItem = items.find((it) => it.id === bodyObj.task_id);
+          if (!targetItem) return { success: false, error: 'Tarea de backlog no encontrada' };
+
+          const lines = f.content.split(/\r?\n/);
+          lines.splice(targetItem.lineIndex, 1);
+          await GitHubRestClient.putFile(vault, backlogFile, lines.join('\n'), `chore(backlog): schedule "${targetItem.title}"`);
+
+          const newTask = {
+            id: `T-${Date.now()}`,
+            title: targetItem.title,
+            project_id: targetItem.project_id === 'GENERAL' ? null : targetItem.project_id,
+            status: 'pending',
+            is_done: false,
+            is_cancelled: false,
+            is_pending: true,
+            task_type: 'task',
+            premoji: '',
+            description: ''
+          };
+          if (bodyObj.target === 'week') {
+            weekState.week_tasks.unshift(newTask);
+          } else {
+            const dNum = Number(bodyObj.day_number);
+            const dayObj = weekState.days.find((d) => d.day_number === dNum) || weekState.days[0];
+            if (dayObj) dayObj.tasks.unshift(newTask);
+          }
+          await this.saveWeekState(vault, weekState, `feat(task): schedule from backlog "${targetItem.title}"`);
+          return { success: true };
+        }
+      }
+
       // 13. Proyectos Resumen: GET /api/projects
       if (pathname === '/api/projects' && method === 'GET') {
         const map = new Map();
+        try {
+          const pf = await GitHubRestClient.getFile(vault, 'data/tables/projects.yaml');
+          let curId = null;
+          let curName = null;
+          pf.content.split(/\r?\n/).forEach((l) => {
+            const idM = l.match(/^\s*-\s*id:\s*['"]?([A-Za-z0-9_-]+)['"]?/);
+            if (idM) {
+              curId = idM[1].trim();
+              curName = curId;
+              if (!map.has(curId)) {
+                map.set(curId, { id: curId, name: curName, total_tasks: 0, done_tasks: 0, pending_tasks: 0, backlog_count: 0, notes_count: 0, progress_pct: 0 });
+              }
+              return;
+            }
+            const nameM = l.match(/^\s+name:\s*['"]?(.*?)['"]?\s*$/);
+            if (nameM && curId && map.has(curId)) {
+              map.get(curId).name = nameM[1].trim() || curId;
+            }
+          });
+        } catch (_) {}
+
         const allTasks = [...weekState.week_tasks, ...weekState.days.flatMap((d) => d.tasks)];
         for (const t of allTasks) {
           const pid = t.project_id || 'GENERAL';

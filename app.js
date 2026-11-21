@@ -1544,7 +1544,7 @@ function checkAndTriggerAutocomplete(inputEl) {
         normalizeSearchStr(d.title).includes(query) ||
         normalizeSearchStr(d.url).includes(query)
       );
-    });
+    }).reverse();
     mode = 'definition';
     startIndex = cursorPos - defMatch[0].length;
   } else if (mentionMatch) {
@@ -4003,10 +4003,14 @@ async function openProjectsOverviewModal() {
 async function openBacklogManagerModal() {
   openModal('🗂️ Gestionar Backlog (Tareas sin fecha)', `<div>Cargando backlog...</div>`);
   try {
-    const res = await fetch(`/api/backlog?vault=${encodeURIComponent(state.currentVault || '')}`);
+    const [res, projects] = await Promise.all([
+      fetch(`/api/backlog?vault=${encodeURIComponent(state.currentVault || '')}`),
+      fetchVaultProjectsList()
+    ]);
     const data = await res.json();
     const tasks = data.backlog_tasks || [];
     const activeDayNum = state.activeDayNumber || (state.hubData && state.hubData.active_day ? state.hubData.active_day.day_number : null);
+    const projectOpts = buildProjectOnlyOptionsHtml(projects);
 
     const listHtml = tasks.map((t) => `
       <div class="modal-list-item">
@@ -4024,25 +4028,45 @@ async function openBacklogManagerModal() {
 
     el.modalBody.innerHTML = `
       <div class="modal-section-title">Añadir Tarea Directamente al Backlog</div>
-      <div class="modal-form-row">
-        <input id="backlogNewTitle" class="edit-input" style="flex:1;" type="text" placeholder="Nueva tarea de backlog... (ej: Migrar servidor #[INFRA])">
+      <div class="modal-form-row" style="flex-wrap:wrap;">
+        <input id="backlogNewTitle" class="edit-input" style="flex:1;min-width:180px;" type="text" placeholder="Nueva tarea de backlog... (ej: Migrar servidor #[INFRA])">
+        <select id="backlogNewProject" class="edit-select" title="Proyecto de la tarea">${projectOpts}</select>
         <button id="btnAddBacklogTask" class="btn-edit-save" type="button">➕ Guardar en Backlog</button>
       </div>
       <div class="modal-section-title">Tareas Pendientes sin Agendar (${tasks.length})</div>
       <div class="modal-list">${listHtml || '<div class="empty-state">¡Backlog limpio! No hay tareas pendientes sin fecha.</div>'}</div>
     `;
 
-    document.getElementById('btnAddBacklogTask').addEventListener('click', async () => {
-      const title = document.getElementById('backlogNewTitle').value.trim();
-      if (!title) return;
-      const r = await fetch('/api/backlog', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vault: state.currentVault, title })
-      });
-      if (r.ok) {
-        showToast('Tarea añadida al Backlog', 'success');
-        openBacklogManagerModal();
+    const submitBacklogTask = async () => {
+      const titleInput = document.getElementById('backlogNewTitle');
+      const title = titleInput.value.trim();
+      if (!title) {
+        titleInput.focus();
+        return;
+      }
+      const projectId = document.getElementById('backlogNewProject').value || null;
+      const btn = document.getElementById('btnAddBacklogTask');
+      if (btn) btn.disabled = true;
+      try {
+        const r = await fetch('/api/backlog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vault: state.currentVault, title, project_id: projectId })
+        });
+        if (r.ok) {
+          showToast('Tarea añadida al Backlog', 'success');
+          openBacklogManagerModal();
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    };
+
+    document.getElementById('btnAddBacklogTask').addEventListener('click', submitBacklogTask);
+    document.getElementById('backlogNewTitle').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitBacklogTask();
       }
     });
 
@@ -4206,7 +4230,7 @@ function openConsolidateMonthModal() {
       <input id="consMonthNum" class="edit-input" style="flex:1;" type="number" min="1" max="12" value="${curMonth}" placeholder="Mes (1-12)">
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:var(--text-muted);cursor:pointer;">
-      <input id="consMonthDelete" type="checkbox">
+      <input id="consMonthDelete" type="checkbox" checked>
       Borrar archivos semanales origen tras consolidar
     </label>
     <div style="display:flex;justify-content:flex-end;">
