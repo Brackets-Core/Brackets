@@ -135,7 +135,11 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('resize', closeLocationPopover);
 
+const APP_PWA_VERSION = 'v23';
+
 document.addEventListener('DOMContentLoaded', async () => {
+  const verBadge = document.getElementById('appVersionBadge');
+  if (verBadge) verBadge.textContent = APP_PWA_VERSION;
   applyVisualSettings(loadVisualSettings());
   setupPwaInstall();
   setupEventListeners();
